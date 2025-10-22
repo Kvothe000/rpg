@@ -8,7 +8,12 @@ include 'db_connect.php';
 if (!function_exists('roll_d100')) {
     include 'game_logic.php';
 }
-
+// (NOVO LOCAL) Lógica de Logout Centralizada
+if (isset($_GET['logout'])) {
+    session_destroy(); // Destrói a sessão
+    header('Location: login.php'); // Redireciona para o login
+    exit; // Interrompe o script
+}
 // Verifica se a sessão está ativa
 if (isset($_SESSION['player_id'])) {
     $player_id = $_SESSION['player_id'];
