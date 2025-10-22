@@ -59,7 +59,7 @@ function calcular_stats_derivados($stats_base, $level, $classe_base) {
     $int_stat = isset($stats_base['int_stat']) ? (int)$stats_base['int_stat'] : 10;
     $wis = isset($stats_base['wis']) ? (int)$stats_base['wis'] : 10;
 
-    $hp_max = 100; // Valor padrão caso a classe não seja encontrada
+    $hp_max = 100; // Valor padrão
     $recurso_max = 50; // Valor padrão
 
     // --- CÁLCULO DE HP MÁXIMO (Depende da Classe) ---
@@ -68,6 +68,7 @@ function calcular_stats_derivados($stats_base, $level, $classe_base) {
             $hp_max = ($con * 12) + ($level * 60);
             break;
         case 'Ladino':
+        case 'Caçador': // Adicionando Caçador com stats de Ladino por enquanto
             $hp_max = ($con * 10) + ($level * 50);
             break;
         case 'Mago':
@@ -84,8 +85,11 @@ function calcular_stats_derivados($stats_base, $level, $classe_base) {
             $recurso_max = 50 + ($con * 5) + ($str * 2);
             break;
         case 'Ladino': // Energia
-            $recurso_max = 100 + ($dex * 5);
-            break;
+             $recurso_max = 100 + ($dex * 5);
+             break;
+        case 'Caçador': // Foco (similar a Energia, baseado em DEX/WIS?)
+             $recurso_max = 90 + ($dex * 4) + ($wis * 2); // Exemplo
+             break;
         case 'Mago': // Mana
             $recurso_max = 80 + ($int_stat * 10) + ($wis * 5);
             break;
@@ -304,31 +308,25 @@ function verificar_level_up($player_id, $player_data, $conexao) {
         }
         
         // 5. Atualiza o Banco de Dados com os novos valores E RECALCULA HP/MANA MAX
-        
-        // Pega os stats BASE atuais (sem bônus de equipamento)
-        $stats_base_atuais = [
-            'str' => $player_data['str'], 'dex' => $player_data['dex'], 'con' => $player_data['con'],
-            'int_stat' => $player_data['int_stat'], 'wis' => $player_data['wis']
-        ];
-        // Recalcula usando a função atualizada
+        $stats_base_atuais = [ /* ... pega stats base ... */ ];
         $novos_derivados = calcular_stats_derivados($stats_base_atuais, $novo_level, $player_data['classe_base']);
         $novo_hp_max = $novos_derivados['hp_max'];
         $novo_recurso_max = $novos_derivados['recurso_max'];
-        
-        // Query UPDATE com HP/Mana Max atualizados
+
         $sql_level_up = "UPDATE personagens SET
                             level = $novo_level,
                             xp_atual = $xp_atual,
                             xp_proximo_level = $novo_xp_necessario,
-                            hp_max = $novo_hp_max,             -- Adicionado
-                            mana_max = $novo_recurso_max,       -- Adicionado
+                            hp_max = $novo_hp_max,             -- CONFIRME SE ESTÁ AQUI
+                            mana_max = $novo_recurso_max,       -- CONFIRME SE ESTÁ AQUI
                             pontos_atributo_disponiveis = pontos_atributo_disponiveis + $pa_ganho,
                             pontos_habilidade_disponiveis = pontos_habilidade_disponiveis + $ph_ganho
                          WHERE id = $player_id";
         $conexao->query($sql_level_up);
 
-        // (Opcional: Curar o jogador no level up?)
-         $conexao->query("UPDATE personagens SET hp_atual = $novo_hp_max, mana_atual = $novo_recurso_max WHERE id = $player_id");
+        // Opcional: Curar no level up
+        $conexao->query("UPDATE personagens SET hp_atual = $novo_hp_max, mana_atual = $novo_recurso_max WHERE id = $player_id");
+
 
         // 6. Prepara a mensagem de feedback
         $mensagem_level_up .= "<h3 style='color: #00FF00;'>LEVEL UP! Você alcançou o Nível {$novo_level}!</h3>";
