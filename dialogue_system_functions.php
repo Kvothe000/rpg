@@ -165,4 +165,5 @@ function get_escolhas_anteriores($player_id, $npc_id, $conexao, $limite = 5) {
     
     return $stmt->get_result();
 }
+
 ?>

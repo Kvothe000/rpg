@@ -279,53 +279,78 @@ function processar_auto_loot($id_personagem, $stats_personagem, $conexao, $id_it
  * @return string Mensagem de feedback (Ex: "VOCÊ SUBIU DE NÍVEL!").
  */
 function verificar_level_up($player_id, $player_data, $conexao) {
-    
+
     $mensagem_level_up = ""; // String para retornar o feedback
-    
+
     // Pega o XP atual e o XP necessário
     $xp_atual = $player_data['xp_atual'];
     $xp_necessario = $player_data['xp_proximo_level'];
 
     // Usamos 'while' em vez de 'if' para o caso do jogador ganhar XP para 2 níveis de uma vez
     while ($xp_atual >= $xp_necessario) {
-        
+
         // 1. O JOGADOR SUBIU DE NÍVEL
         $novo_level = $player_data['level'] + 1;
-        
+
         // 2. Calcula o XP "restante"
-        $xp_atual = $xp_atual - $xp_necessario; 
-        
+        $xp_atual = $xp_atual - $xp_necessario;
+
         // 3. Define o XP para o próximo nível (Ex: Fórmula simples: Nível * 1000)
-        // (No futuro, podemos usar uma tabela de XP, mas uma fórmula é mais fácil agora)
-        $novo_xp_necessario = $novo_level * 1000; 
-        
-        // 4. Define as Recompensas (Conforme nosso GDD)
+        $novo_xp_necessario = $novo_level * 1000;
+
+        // 4. Define as Recompensas
         $pa_ganho = 3; // 3 Pontos de Atributo (PA)
-        $ph_ganho = 1; // 1 Ponto de Habilidade (PH) (a cada 2 níveis)
-        
-        if ($novo_level % 2 != 0) { // Se o nível for ímpar
-            $ph_ganho = 0; // Não ganha PH em nível ímpar (só em par)
-        }
-        
+        $ph_ganho = ($novo_level % 2 == 0) ? 1 : 0; // 1 PH a cada 2 níveis (níveis pares)
+
+        // ---> NOVO: INCREMENTAR CORRUPÇÃO <---
+        $corrupcao_ganha = 1; // Ganha 1 ponto de corrupção por nível (pode ajustar)
+        // ------------------------------------
+
         // 5. Atualiza o Banco de Dados com os novos valores E RECALCULA HP/MANA MAX
-        $stats_base_atuais = [ /* ... pega stats base ... */ ];
+        // Primeiro, pega os stats BASE atuais ANTES de aplicar PA (se houver)
+        $stats_base_atuais = [
+             'str' => $player_data['str'],
+             'dex' => $player_data['dex'],
+             'con' => $player_data['con'],
+             'int_stat' => $player_data['int_stat'],
+             'wis' => $player_data['wis'],
+             'cha' => $player_data['cha']
+        ];
         $novos_derivados = calcular_stats_derivados($stats_base_atuais, $novo_level, $player_data['classe_base']);
         $novo_hp_max = $novos_derivados['hp_max'];
         $novo_recurso_max = $novos_derivados['recurso_max'];
 
         $sql_level_up = "UPDATE personagens SET
-                            level = $novo_level,
-                            xp_atual = $xp_atual,
-                            xp_proximo_level = $novo_xp_necessario,
-                            hp_max = $novo_hp_max,             -- CONFIRME SE ESTÁ AQUI
-                            mana_max = $novo_recurso_max,       -- CONFIRME SE ESTÁ AQUI
-                            pontos_atributo_disponiveis = pontos_atributo_disponiveis + $pa_ganho,
-                            pontos_habilidade_disponiveis = pontos_habilidade_disponiveis + $ph_ganho
-                         WHERE id = $player_id";
-        $conexao->query($sql_level_up);
+                            level = ?,
+                            xp_atual = ?,
+                            xp_proximo_level = ?,
+                            hp_max = ?,
+                            mana_max = ?,
+                            pontos_atributo_disponiveis = pontos_atributo_disponiveis + ?,
+                            pontos_habilidade_disponiveis = pontos_habilidade_disponiveis + ?,
+                            corrupcao = corrupcao + ? /* ---> NOVO <--- */
+                         WHERE id = ?";
+        $stmt_levelup = $conexao->prepare($sql_level_up);
+        // Tipos: i (int), i, i, i, i, i, i, i (para corrupcao_ganha), i (para id)
+        $stmt_levelup->bind_param("iiiiiiiii",
+            $novo_level,
+            $xp_atual,
+            $novo_xp_necessario,
+            $novo_hp_max,
+            $novo_recurso_max,
+            $pa_ganho,
+            $ph_ganho,
+            $corrupcao_ganha, // ---> NOVO <---
+            $player_id
+        );
+        $stmt_levelup->execute();
+
 
         // Opcional: Curar no level up
-        $conexao->query("UPDATE personagens SET hp_atual = $novo_hp_max, mana_atual = $novo_recurso_max WHERE id = $player_id");
+        $sql_heal = "UPDATE personagens SET hp_atual = ?, mana_atual = ? WHERE id = ?";
+        $stmt_heal = $conexao->prepare($sql_heal);
+        $stmt_heal->bind_param("iii", $novo_hp_max, $novo_recurso_max, $player_id);
+        $stmt_heal->execute();
 
 
         // 6. Prepara a mensagem de feedback
@@ -334,13 +359,18 @@ function verificar_level_up($player_id, $player_data, $conexao) {
         if ($ph_ganho > 0) {
             $mensagem_level_up .= "<p style='color: yellow;'>Você ganhou +{$ph_ganho} Ponto de Habilidade (PH)!</p>";
         }
-        
+        // ---> NOVO: Feedback sutil de corrupção <---
+        $mensagem_level_up .= "<p style='color: var(--accent-arcane-glow); font-style: italic; font-size: 0.9em;'>Você sente uma leve tontura enquanto o poder se assenta...</p>";
+        // -----------------------------------------
+
         // 7. Atualiza os dados locais para o 'while' continuar checando
         $player_data['level'] = $novo_level;
         $player_data['xp_atual'] = $xp_atual;
         $player_data['xp_proximo_level'] = $novo_xp_necessario;
+        // Atualiza a corrupção local também, se necessário para outras lógicas na mesma requisição
+        $player_data['corrupcao'] = ($player_data['corrupcao'] ?? 0) + $corrupcao_ganha;
     }
-    
+
     return $mensagem_level_up;
 }
 
@@ -437,5 +467,156 @@ function verificar_resistencia_status($alvo_id, $status_id, $conexao) {
     
     return min(80, $resistencia_base); // Máximo 80% de resistência
 }
+/**
+ * Atribui uma quest a um jogador.
+ *
+ * @param int $player_id ID do jogador.
+ * @param int $quest_id ID da quest base.
+ * @param object $conexao Conexão com o banco de dados.
+ * @return bool True se a quest foi atribuída com sucesso, False caso contrário.
+ */
+function atribuir_quest($player_id, $quest_id, $conexao) {
+    // Verifica se o jogador já tem a quest ou já completou
+    $sql_check = "SELECT id FROM player_quests WHERE player_id = ? AND quest_id = ?";
+    $stmt_check = $conexao->prepare($sql_check);
+    $stmt_check->bind_param("ii", $player_id, $quest_id);
+    $stmt_check->execute();
+    if ($stmt_check->get_result()->num_rows > 0) {
+        return false; // Já tem ou completou
+    }
 
+    // Verifica pré-requisitos (nível, quest anterior - implementar se necessário)
+    $sql_quest_base = "SELECT nivel_minimo, quest_sequencia_id FROM quests_base WHERE id = ?";
+    $stmt_base = $conexao->prepare($sql_quest_base);
+    $stmt_base->bind_param("i", $quest_id);
+    $stmt_base->execute();
+    $quest_base = $stmt_base->get_result()->fetch_assoc();
+
+    if (!$quest_base) return false; // Quest não existe
+
+    // (Adicionar verificação de nível e quest anterior aqui se precisar)
+
+    // Atribui a quest
+    $sql_insert = "INSERT INTO player_quests (player_id, quest_id, status) VALUES (?, ?, 'aceita')";
+    $stmt_insert = $conexao->prepare($sql_insert);
+    $stmt_insert->bind_param("ii", $player_id, $quest_id);
+    return $stmt_insert->execute();
+}
+
+/**
+ * Atualiza o progresso de uma quest ativa do jogador.
+ *
+ * @param int $player_id ID do jogador.
+ * @param string $tipo_acao Tipo da ação realizada ('matar', 'coletar', etc.).
+ * @param int $id_alvo ID do monstro/item relacionado à ação.
+ * @param int $quantidade Quantidade realizada (normalmente 1).
+ * @param object $conexao Conexão com o banco de dados.
+ */
+function atualizar_progresso_quest($player_id, $tipo_acao, $id_alvo, $quantidade, $conexao) {
+    // Busca quests ATIVAS do jogador que correspondem à ação
+    $sql_find_quests = "SELECT pq.id as player_quest_id, pq.progresso_atual, qb.quantidade_objetivo, qb.id as quest_base_id
+                        FROM player_quests pq
+                        JOIN quests_base qb ON pq.quest_id = qb.id
+                        WHERE pq.player_id = ?
+                        AND pq.status IN ('aceita', 'em_progresso')
+                        AND qb.tipo_objetivo = ?
+                        AND qb.id_objetivo = ?"; // Assume que o id_objetivo corresponde (ex: ID do monstro)
+
+    $stmt_find = $conexao->prepare($sql_find_quests);
+    $stmt_find->bind_param("isi", $player_id, $tipo_acao, $id_alvo);
+    $stmt_find->execute();
+    $quests_afetadas = $stmt_find->get_result();
+
+    while ($quest = $quests_afetadas->fetch_assoc()) {
+        $novo_progresso = min($quest['progresso_atual'] + $quantidade, $quest['quantidade_objetivo']);
+        $novo_status = ($novo_progresso >= $quest['quantidade_objetivo']) ? 'completa' : 'em_progresso';
+
+        $sql_update = "UPDATE player_quests SET progresso_atual = ?, status = ? WHERE id = ?";
+        $stmt_update = $conexao->prepare($sql_update);
+        $stmt_update->bind_param("isi", $novo_progresso, $novo_status, $quest['player_quest_id']);
+        $stmt_update->execute();
+
+        // Se completou, pode adicionar um feedback aqui ou chamar outra função
+        if ($novo_status === 'completa') {
+             // Você pode querer adicionar uma notificação para o jogador
+             // Ex: $_SESSION['notificacoes'][] = "Quest '" . $titulo_quest . "' completada!";
+        }
+    }
+}
+
+/**
+ * Verifica se uma quest específica está completa para o jogador.
+ *
+ * @param int $player_id ID do jogador.
+ * @param int $quest_id ID da quest base.
+ * @param object $conexao Conexão com o banco de dados.
+ * @return bool True se a quest está com status 'completa'.
+ */
+function is_quest_completa($player_id, $quest_id, $conexao) {
+    $sql = "SELECT id FROM player_quests WHERE player_id = ? AND quest_id = ? AND status = 'completa'";
+    $stmt = $conexao->prepare($sql);
+    $stmt->bind_param("ii", $player_id, $quest_id);
+    $stmt->execute();
+    return $stmt->get_result()->num_rows > 0;
+}
+
+/**
+ * Entrega uma quest completa, dando as recompensas.
+ *
+ * @param int $player_id ID do jogador.
+ * @param int $quest_id ID da quest base.
+ * @param object $conexao Conexão com o banco de dados.
+ * @return array ['sucesso' => bool, 'mensagem' => string]
+ */
+function entregar_quest($player_id, $quest_id, $conexao) {
+    // Busca a quest base e o status do jogador
+    $sql = "SELECT qb.titulo, qb.recompensa_xp, qb.recompensa_ouro, qb.recompensa_item_id, qb.recompensa_item_qtd, pq.status
+            FROM quests_base qb
+            LEFT JOIN player_quests pq ON qb.id = pq.quest_id AND pq.player_id = ?
+            WHERE qb.id = ?";
+    $stmt = $conexao->prepare($sql);
+    $stmt->bind_param("ii", $player_id, $quest_id);
+    $stmt->execute();
+    $quest_data = $stmt->get_result()->fetch_assoc();
+
+    if (!$quest_data) {
+        return ['sucesso' => false, 'mensagem' => 'Quest não encontrada.'];
+    }
+
+    if ($quest_data['status'] !== 'completa') {
+        return ['sucesso' => false, 'mensagem' => 'Você ainda não completou os objetivos desta quest.'];
+    }
+
+    // Atualiza status para 'entregue'
+    $sql_update = "UPDATE player_quests SET status = 'entregue', data_fim = NOW() WHERE player_id = ? AND quest_id = ?";
+    $stmt_update = $conexao->prepare($sql_update);
+    $stmt_update->bind_param("ii", $player_id, $quest_id);
+    $stmt_update->execute();
+
+    // Aplica recompensas
+    $xp = $quest_data['recompensa_xp'];
+    $ouro = $quest_data['recompensa_ouro'];
+    $item_id = $quest_data['recompensa_item_id'];
+    $item_qtd = $quest_data['recompensa_item_qtd'];
+
+    $sql_recompensa = "UPDATE personagens SET xp_atual = xp_atual + ?, ouro = ouro + ? WHERE id = ?";
+    $stmt_recompensa = $conexao->prepare($sql_recompensa);
+    $stmt_recompensa->bind_param("iii", $xp, $ouro, $player_id);
+    $stmt_recompensa->execute();
+
+    $mensagem_recompensa = "Você recebeu {$xp} XP e {$ouro} Ouro.";
+
+    // Adiciona item se houver
+    if ($item_id && $item_qtd > 0) {
+        $player_data_temp = $conexao->query("SELECT * FROM personagens WHERE id=$player_id")->fetch_assoc(); // Pega stats atuais para peso
+        $loot_msg = processar_auto_loot($player_id, $player_data_temp, $conexao, $item_id, $item_qtd);
+        $mensagem_recompensa .= " " . strip_tags($loot_msg); // Adapta a mensagem do loot
+    }
+
+    // Verificar level up
+    $player_data_atualizado = $conexao->query("SELECT * FROM personagens WHERE id=$player_id")->fetch_assoc();
+    verificar_level_up($player_id, $player_data_atualizado, $conexao); // A função já retorna a mensagem de level up, mas aqui apenas garantimos a verificação
+
+    return ['sucesso' => true, 'mensagem' => "Quest '{$quest_data['titulo']}' entregue! {$mensagem_recompensa}"];
+}
 ?>

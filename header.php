@@ -2,11 +2,11 @@
 // header.php
 
 // Incluir conexão
-include 'db_connect.php';
+include_once 'db_connect.php'; // Alterado para include_once
 
 // Incluir game_logic.php UMA VEZ
 if (!function_exists('roll_d100')) {
-    include 'game_logic.php';
+    include_once 'game_logic.php'; // Alterado para include_once
 }
 // (NOVO LOCAL) Lógica de Logout Centralizada
 if (isset($_GET['logout'])) {
@@ -14,11 +14,26 @@ if (isset($_GET['logout'])) {
     header('Location: login.php'); // Redireciona para o login
     exit; // Interrompe o script
 }
+
+// Variável para mensagens sutis de corrupção
+$mensagem_corrupcao_sutil = "";
+
 // Verifica se a sessão está ativa
 if (isset($_SESSION['player_id'])) {
     $player_id = $_SESSION['player_id'];
-    $sql_player = "SELECT * FROM personagens WHERE id = $player_id";
-    $player_data = $conexao->query($sql_player)->fetch_assoc();
+    // ---> ATUALIZADO: Selecionar a coluna 'corrupcao' <---
+    $sql_player = "SELECT *, corrupcao FROM personagens WHERE id = ?"; // Adiciona corrupcao
+    $stmt_player = $conexao->prepare($sql_player);
+    $stmt_player->bind_param("i", $player_id);
+    $stmt_player->execute();
+    $player_data = $stmt_player->get_result()->fetch_assoc();
+    // -----------------------------------------------------
+
+    if (!$player_data) {
+        session_destroy();
+        header('Location: login.php');
+        exit;
+    }
     
     // Calcula o recurso (Mana ou Fúria)
     $recurso_nome = ($player_data['classe_base'] === 'Mago' || $player_data['classe_base'] === 'Sacerdote') ? 'Mana' : 'Fúria';
@@ -39,6 +54,22 @@ if (isset($_SESSION['player_id'])) {
     // Calcula o limite de carga
     $limite_carga = calcular_limite_carga($player_data['str'], $player_id, $conexao);
 }
+// ---> NOVO: LÓGICA PARA EFEITO SUTIL DE CORRUPÇÃO <---
+    $nivel_corrupcao = $player_data['corrupcao'] ?? 0;
+    if ($nivel_corrupcao > 3) { // Exemplo: Efeitos começam a partir de Corrupção 4
+        $chance_efeito = min(5 + ($nivel_corrupcao * 2), 50); // Aumenta a chance com a corrupção, max 50%
+        if (mt_rand(1, 100) <= $chance_efeito) {
+            $mensagens_sutis = [
+                "Você ouve um sussurro que some rapidamente...",
+                "Sua visão escurece por um breve instante.",
+                "Uma imagem fugaz de Elara cruza sua mente.",
+                "Um arrepio percorre sua espinha sem motivo aparente.",
+                "[Sistema?]: ...erro... fragmento instável...",
+                "A interface pisca em vermelho por um momento."
+            ];
+            $mensagem_corrupcao_sutil = $mensagens_sutis[array_rand($mensagens_sutis)];
+        }
+    }
 ?>
 
 <!DOCTYPE html>
@@ -48,7 +79,61 @@ if (isset($_SESSION['player_id'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo isset($titulo_pagina) ? $titulo_pagina : 'RPG MUD - Arcana Duality'; ?></title>
     <link rel="stylesheet" href="style.css">
-</head>
+    <style>
+        .corrupcao-sutil-msg {
+            position: fixed; /* Ou absolute, dependendo do layout */
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(138, 43, 226, 0.6); /* Fundo roxo translúcido */
+            color: #FF00FF; /* Cor magenta */
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-style: italic;
+            z-index: 1001; /* Acima de outros elementos */
+            opacity: 0;
+            animation: fadeInOut 5s ease-in-out;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+    </style>
+    </head>
+    <body>
+    <header>
+        <?php if (isset($player_data)): ?>
+        <div class="status-bar">
+             <div class="status-block">
+                 <div class="resource-bar">
+                     <span class="resource-label" style="color: var(--accent-arcane-glow);">Corrupção</span>
+                     <span style="color: var(--accent-arcane-glow); font-weight: bold;">
+                         <?php echo $player_data['corrupcao'] ?? 0; ?>
+                     </span>
+                 </div>
+             </div>
+            </div>
+
+        <?php endif; ?>
+    </header>
+
+        <?php if (!empty($mensagem_corrupcao_sutil)): ?>
+            <div class="corrupcao-sutil-msg" id="corrupcaoMsg">
+                <?php echo htmlspecialchars($mensagem_corrupcao_sutil); ?>
+            </div>
+            <script>
+                // Remove a mensagem após a animação para não acumular divs
+                setTimeout(() => {
+                    const msgDiv = document.getElementById('corrupcaoMsg');
+                    if (msgDiv) {
+                        msgDiv.remove();
+                    }
+                }, 5000); // Tempo igual à duração da animação
+            </script>
+        <?php endif; ?>
 <body>
     <header>
         <?php if (isset($player_data)): ?>

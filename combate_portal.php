@@ -37,6 +37,52 @@ if (!$player_data_base) {
     exit;
 }
 
+$player_id = $_SESSION['player_id'];
+$is_quest_combate = false;
+$quest_id_ativa = null;
+$quest_objetivo_atual = 0;
+$quest_objetivo_total = 0;
+$id_monstro_quest = null;
+
+// ---> NOVO: VERIFICAR SE É COMBATE DE QUEST <---
+if (isset($_GET['missao']) && $_GET['missao'] === 'custo_poder') {
+    $quest_id_custo_poder = 1; // ID da quest
+
+    // Verifica se o jogador tem essa quest ativa
+    $sql_check_quest = "SELECT pq.progresso_atual, qb.quantidade_objetivo, qb.id_objetivo
+                        FROM player_quests pq
+                        JOIN quests_base qb ON pq.quest_id = qb.id
+                        WHERE pq.player_id = ? AND pq.quest_id = ? AND pq.status IN ('aceita', 'em_progresso')";
+    $stmt_check = $conexao->prepare($sql_check_quest);
+    $stmt_check->bind_param("ii", $player_id, $quest_id_custo_poder);
+    $stmt_check->execute();
+    $quest_ativa = $stmt_check->get_result()->fetch_assoc();
+
+    if ($quest_ativa) {
+        $is_quest_combate = true;
+        $quest_id_ativa = $quest_id_custo_poder;
+        $quest_objetivo_atual = $quest_ativa['progresso_atual'];
+        $quest_objetivo_total = $quest_ativa['quantidade_objetivo'];
+        $id_monstro_quest = $quest_ativa['id_objetivo']; // ID do Slime (1)
+        $titulo_pagina = "Área de Treinamento - Missão";
+        $rank_escolhido = 'E'; // Força o Rank E para esta área
+        $_SESSION['combate_rank'] = 'E'; // Garante que a sessão reflita o rank
+    } else {
+        // Se o jogador tentou acessar a área de missão sem ter a quest ativa, redireciona
+        header('Location: cidade.php');
+        exit;
+    }
+} else {
+     // Lógica normal de escolher rank via GET
+    $rank_escolhido = isset($_GET['rank']) ? strtoupper($_GET['rank']) : 'E';
+    $ranks_validos = ['E', 'D', 'C'];
+    if (!in_array($rank_escolhido, $ranks_validos)) {
+        $rank_escolhido = 'E';
+    }
+    $titulo_pagina = "Combate - Portal Rank " . $rank_escolhido;
+}
+// ---------------------------------------------------
+
 // ✅ VERIFICAR DESBLOQUEIO DE ULTIMATES
 function verificar_desbloqueio_ultimates_automatico($player_id, $conexao) {
     $sql_ultimates = "SELECT id FROM ultimate_abilities_base";
@@ -119,12 +165,6 @@ verificar_desbloqueio_ultimates_automatico($player_id, $conexao);
 // =============================================================================
 
 $mensagem_combate = "";
-$rank_escolhido = isset($_GET['rank']) ? strtoupper($_GET['rank']) : 'E';
-$ranks_validos = ['E', 'D', 'C'];
-
-if (!in_array($rank_escolhido, $ranks_validos)) {
-    $rank_escolhido = 'E';
-}
 
 // Limpa sessão antiga se necessário
 if (isset($_SESSION['combate_ativo']) && (!isset($_GET['acao']) || (isset($_SESSION['combate_rank']) && $_SESSION['combate_rank'] != $rank_escolhido))) {
@@ -164,11 +204,37 @@ $recurso_nome = (in_array($player_data_base['classe_base'], ['Mago', 'Sacerdote'
 // INICIALIZAÇÃO DO COMBATE
 // =============================================================================
 
+// ----> AJUSTE NA GERAÇÃO DO MONSTRO <----
 if (!isset($_SESSION['combate_ativo'])) {
-    $monstro_dados = gerar_monstro($rank_escolhido, $conexao);
-    
-    if (!$monstro_dados) {
-        die("Erro: Não foi possível gerar monstro para o Rank {$rank_escolhido}");
+    if ($is_quest_combate && $id_monstro_quest) {
+        // Força gerar o monstro da quest (Slime)
+        $sql_monstro_quest = "SELECT * FROM monstros_base WHERE id = ? LIMIT 1";
+        $stmt_monstro = $conexao->prepare($sql_monstro_quest);
+        $stmt_monstro->bind_param("i", $id_monstro_quest);
+        $stmt_monstro->execute();
+        $monstro_base = $stmt_monstro->get_result()->fetch_assoc();
+
+        if ($monstro_base) {
+             $monstro_dados = [
+                'id_base' => $monstro_base['id'],
+                'nome' => $monstro_base['nome'],
+                'hp_max' => $monstro_base['hp_base'],
+                'hp_atual' => $monstro_base['hp_base'],
+                'str' => $monstro_base['str_base'],
+                'dex' => $monstro_base['dex_base'],
+                'con' => $monstro_base['con_base'],
+                'dano_min' => $monstro_base['dano_min_base'],
+                'dano_max' => $monstro_base['dano_max_base'],
+                'xp_recompensa' => $monstro_base['xp_recompensa'],
+                'ouro_recompensa' => mt_rand($monstro_base['ouro_recompensa_min'], $monstro_base['ouro_recompensa_max'])
+             ];
+        } else {
+             die("Erro: Monstro da quest (ID: $id_monstro_quest) não encontrado.");
+        }
+
+    } else {
+        // Geração normal de monstro pelo rank
+        $monstro_dados = gerar_monstro($rank_escolhido, $conexao);
     }
 
     // Carrega skills do jogador
@@ -602,10 +668,38 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
     atualizar_progresso_missao($player_id, 'matar_monstros', 1, $conexao);
     atualizar_progresso_achievement($player_id, 'monstros_derrotados', 1, $conexao);
 
+    // ---> NOVO: ATUALIZAR PROGRESSO DA QUEST <---
+    if ($is_quest_combate && $monstro['id_base'] == $id_monstro_quest) {
+        atualizar_progresso_quest($player_id, 'matar', $id_monstro_quest, 1, $conexao);
+        $quest_objetivo_atual++; // Atualiza a contagem local para exibição
+        $mensagem_combate .= "<div class='log-entry log-system'>🎯 Progresso da Missão: {$quest_objetivo_atual}/{$quest_objetivo_total} Slimes eliminados.</div>";
+
+        // Verifica se completou a quest AGORA
+        if ($quest_objetivo_atual >= $quest_objetivo_total) {
+             $mensagem_combate .= "<div class='log-entry log-system' style='color: var(--accent-vital);'>✅ **OBJETIVO DA MISSÃO COMPLETO!** Retorne a Kaelen na Guilda.</div>";
+        }
+    }
+    
     // Verifica level up
     $player_data_atualizado = $conexao->query("SELECT * FROM personagens WHERE id = $player_id")->fetch_assoc();
+    
+    // ---> AJUSTE: MENSAGEM DE LEVEL UP E CUSTO DO PODER <---
+    $player_data_antes = $conexao->query("SELECT level FROM personagens WHERE id = $player_id")->fetch_assoc();
+    $level_antes = $player_data_antes['level'];
+
     $mensagem_level_up = verificar_level_up($player_id, $player_data_atualizado, $conexao);
-    $mensagem_combate .= $mensagem_level_up;
+    
+    // Adiciona a mensagem de level up normal
+    if (!empty($mensagem_level_up)) {
+        $mensagem_combate .= $mensagem_level_up;
+
+        // SE houve level up E FOI na quest "Custo do Poder"
+        if ($is_quest_combate && $player_data_atualizado['level'] > $level_antes) {
+             $mensagem_combate .= "<div class='log-entry log-error' style='border: 1px dashed var(--status-hp); padding: 5px;'>";
+             $mensagem_combate .= "⚡ Uma dor aguda percorre sua mente enquanto o poder flui... O 'Sistema' tem um preço.";
+             $mensagem_combate .= "</div>";
+        }
+    }
     
     // Processa loot
     $monstro_id_base = $monstro['id_base'] ?? 0;
@@ -617,31 +711,26 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
             $loot_msg = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 2, mt_rand(1, 3)); // Fragmento de Slime
             $mensagem_combate .= "<div class='loot-item'>{$loot_msg}</div>";
         }
-    // Bloco Corrigido (COM IDs CERTOS)
-} else if ($monstro_id_base == 3) { // Esqueleto Guerreiro (ID 3)
-    // Chance de dropar Espada (ID 7) OU Armadura (ID 8)
-    if (mt_rand(1, 100) <= 40) { // 40% chance de dropar equipamento
-         $id_equip_drop = (mt_rand(1, 2) == 1) ? 7 : 8; // <-- CORRIGIDO
-         $loot_msg_equip = processar_auto_loot($player_id, $player_data_atualizado, $conexao, $id_equip_drop, 1); 
-         $mensagem_combate .= "<p style='color: cyan;'>{$loot_msg_equip}</p>";
-    }
-    // Sempre dropa Fragmento Ósseo (ID 9)
-    $loot_msg_mat = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 9, mt_rand(2, 5)); // <-- CORRIGIDO
-    $mensagem_combate .= "<p>{$loot_msg_mat}</p>";
-    // Chance RARA de Núcleo de Eco (ID 5)
-    if (mt_rand(1, 100) <= 8) { // 8% chance
-         $loot_msg_nucleo = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 5, 1); 
-         $mensagem_combate .= "<p style='color: magenta;'>{$loot_msg_nucleo}</p>"; 
+    } else if ($monstro_id_base == 3) { // Esqueleto Guerreiro (ID 3)
+        // Chance de dropar Espada (ID 7) OU Armadura (ID 8)
+        if (mt_rand(1, 100) <= 40) { // 40% chance de dropar equipamento
+             $id_equip_drop = (mt_rand(1, 2) == 1) ? 7 : 8;
+             $loot_msg_equip = processar_auto_loot($player_id, $player_data_atualizado, $conexao, $id_equip_drop, 1); 
+             $mensagem_combate .= "<p style='color: cyan;'>{$loot_msg_equip}</p>";
+        }
+        // Sempre dropa Fragmento Ósseo (ID 9)
+        $loot_msg_mat = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 9, mt_rand(2, 5));
+        $mensagem_combate .= "<p>{$loot_msg_mat}</p>";
+        // Chance RARA de Núcleo de Eco (ID 5)
+        if (mt_rand(1, 100) <= 8) { // 8% chance
+             $loot_msg_nucleo = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 5, 1); 
+             $mensagem_combate .= "<p style='color: magenta;'>{$loot_msg_nucleo}</p>"; 
+        }
     }
     
     $mensagem_combate .= "</div>";
     $mensagem_combate .= "</div>";
     
-    // Salva estado do jogador e encerra combate
-    $hp_final = max(1, $combate['jogador_hp_atual']);
-    $mana_final = max(0, $combate['jogador_mana_atual']);
-    $conexao->query("UPDATE personagens SET hp_atual = {$hp_final}, mana_atual = {$mana_final} WHERE id = {$player_id}");
-}   
     // ✅ NO FINAL DO COMBATE (quando monstro é derrotado), ADICIONAR:
     if (isset($_SESSION['dungeon_atual']) && $_SESSION['combate_tipo'] === 'dungeon_dinamica') {
         // ✅ INCREMENTAR INIMIGO ATUAL
@@ -682,11 +771,27 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
         }
     }
     
+    // ---> AJUSTE NOS BOTÕES PÓS-COMBATE <---
+    // Se estava em missão e completou, oferecer botão para voltar à guilda
+    if ($is_quest_combate && $quest_objetivo_atual >= $quest_objetivo_total) {
+        $mensagem_combate .= "<div class='post-combat-actions'>";
+        $mensagem_combate .= "<a href='cidade.php' class='btn btn-primary'>🏛️ VOLTAR PARA GUILDA</a>";
+        $mensagem_combate .= "<a href='personagem.php' class='btn'>👤 VER PERSONAGEM</a>";
+        $mensagem_combate .= "</div>";
+    } elseif ($is_quest_combate) {
+         // Se ainda está na missão, permite continuar na área
+         $mensagem_combate .= "<div class='post-combat-actions'>";
+         $mensagem_combate .= "<a href='combate_portal.php?missao=custo_poder' class='btn btn-primary'>🔄 CONTINUAR MISSÃO</a>";
+         $mensagem_combate .= "<a href='cidade.php' class='btn'>🏳️ RETORNAR À CIDADE</a>";
+         $mensagem_combate .= "</div>";
+    } 
+    
     // Limpa status do combate ao vencer
     $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($combate_id) . "'");
     unset($_SESSION['combate_ativo']);
     unset($_SESSION['combate_rank']);
     unset($_SESSION['combate_id']);
+    
 }
 
 // Incrementa turno se ação foi realizada
@@ -710,12 +815,22 @@ include 'header.php';
         <div class="turn-indicator">
             TURNO <?php echo $combate['turno_atual']; ?> • ESCALADA: +<?php echo $combate['dado_escalada']; ?>
         </div>
+        
     </div>
+
+    <!-- EXIBIR INFO DA QUEST (Se estiver ativa) -->
+    <?php if ($is_quest_combate): ?>
+    <div class="section section-vital text-center quest-tracker">
+        <h4>Missão Ativa: O Custo do Poder</h4>
+        <p>Objetivo: Eliminar Slimes de Mana Fracos (<?php echo $quest_objetivo_atual; ?>/<?php echo $quest_objetivo_total; ?>)</p>
+    </div>
+    <?php endif; ?>
 
     <!-- GRID DE COMBATENTES -->
     <div class="combat-grid">
         <!-- JOGADOR -->
         <div class="section section-vital combatant-card">
+            
             <div class="combatant-header">
                 <h3>🎯 <?php echo htmlspecialchars($player_stats_total['nome']); ?></h3>
                 <span class="combatant-level">Nv. <?php echo $player_stats_total['level']; ?></span>
@@ -1234,6 +1349,17 @@ include 'header.php';
             <?php echo $mensagem_combate; ?>
         </div>
         
+        <?php if ($is_quest_combate && $quest_objetivo_atual >= $quest_objetivo_total): ?>
+        <div class="post-combat-actions">
+            <a href="cidade.php" class="btn btn-primary">🏛️ VOLTAR PARA GUILDA</a>
+            <a href="personagem.php" class="btn">👤 VER PERSONAGEM</a>
+        </div>
+        <?php elseif ($is_quest_combate): ?>
+        <div class="post-combat-actions">
+            <a href="combate_portal.php?missao=custo_poder" class="btn btn-primary">🔄 CONTINUAR MISSÃO</a>
+            <a href="cidade.php" class="btn">🏳️ RETORNAR À CIDADE</a>
+        </div>
+        <?php else: ?>
         <div class="post-combat-actions">
             <a href="combate_portal.php?rank=<?php echo $rank_escolhido; ?>" class="btn btn-primary">
                 🔄 NOVO COMBATE
@@ -1245,8 +1371,10 @@ include 'header.php';
                 👤 VER PERSONAGEM
             </a>
         </div>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
+    
 </div>
 
 <style>
@@ -2370,6 +2498,27 @@ include 'header.php';
     border-radius: 4px;
     margin-left: 5px;
     border: 1px solid gold;
+}
+
+/* ESTILOS PARA QUEST TRACKER */
+.quest-tracker {
+    background: rgba(80, 200, 120, 0.1);
+    border: 1px solid var(--accent-vital);
+    padding: 10px;
+    margin-bottom: 15px;
+    border-radius: 8px;
+}
+.quest-tracker h4 { 
+    color: var(--accent-vital); 
+    margin-bottom: 5px; 
+}
+.quest-tracker p { 
+    color: var(--text-secondary); 
+    margin: 0; 
+}
+.log-system { 
+    color: var(--accent-vital); 
+    font-style: italic; 
 }
 </style>
 
