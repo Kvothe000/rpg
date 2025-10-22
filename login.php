@@ -5,8 +5,16 @@ include 'db_connect.php';
 $titulo_pagina = "Portal de Acesso - Arcana Duality";
 $pagina_atual = 'login';
 
+// --- Lógica de Prólogo ---
+// Verifica se o usuário já viu o prólogo OU se está logado
+if (!isset($_SESSION['prologo_visto']) && !isset($_SESSION['player_id'])) {
+    $mostrar_prologo = true;
+} else {
+    $mostrar_prologo = false;
+}
+
 // =============================================================================
-// VERIFICAÇÃO DE SESSÃO EXISTENTE
+// VERIFICAÇÃO DE SESSÃO EXISTENTE (Se já logado, vai pro inventário)
 // =============================================================================
 if (isset($_SESSION['player_id'])) {
     header('Location: inventario.php');
@@ -14,20 +22,28 @@ if (isset($_SESSION['player_id'])) {
 }
 
 // =============================================================================
-// PROCESSAMENTO DO LOGIN
+// PROCESSAMENTO DO LOGIN / REGISTRO
 // =============================================================================
 $mensagem = "";
-$modo = $_GET['modo'] ?? 'login'; // 'login' ou 'registro'
+// Define o modo padrão como 'login' se não estiver mostrando o prólogo
+$modo = $mostrar_prologo ? null : ($_GET['modo'] ?? 'login');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Marcar prólogo como visto ao tentar logar/registrar pela primeira vez
+    $_SESSION['prologo_visto'] = true;
+
     if (isset($_POST['acao']) && $_POST['acao'] === 'login') {
         // PROCESSAR LOGIN
         $email = $conexao->real_escape_string($_POST['email']);
         $senha_bruta = $_POST['senha'];
 
-        $sql = "SELECT id, nome, senha_hash, level, classe_base FROM personagens WHERE email = '{$email}'";
-        $resultado = $conexao->query($sql);
+        $sql = "SELECT id, nome, senha_hash, level, classe_base FROM personagens WHERE email = ?";
+        $stmt = $conexao->prepare($sql);
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $resultado = $stmt->get_result();
         $usuario = $resultado->fetch_assoc();
+        $stmt->close();
 
         if ($usuario && password_verify($senha_bruta, $usuario['senha_hash'])) {
             $_SESSION['player_id'] = $usuario['id'];
@@ -41,8 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $mensagem = "<div class='feedback feedback-error'>❌ Credenciais inválidas. Tente novamente.</div>";
             $modo = 'login';
         }
-    } 
-    
+    }
+
     elseif (isset($_POST['acao']) && $_POST['acao'] === 'registro') {
         // PROCESSAR REGISTRO
         $nome = $conexao->real_escape_string($_POST['nome']);
@@ -50,15 +66,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $senha_bruta = $_POST['senha'];
         $classe_base = $conexao->real_escape_string($_POST['classe_base']);
 
-        // Verifica se email já existe
-        $sql_check = "SELECT id FROM personagens WHERE email = '{$email}'";
-        $result_check = $conexao->query($sql_check);
-        
+        $sql_check = "SELECT id FROM personagens WHERE email = ?";
+        $stmt_check = $conexao->prepare($sql_check);
+        $stmt_check->bind_param("s", $email);
+        $stmt_check->execute();
+        $result_check = $stmt_check->get_result();
+
         if ($result_check->num_rows > 0) {
             $mensagem = "<div class='feedback feedback-error'>❌ Este email já está em uso.</div>";
             $modo = 'registro';
         } else {
-            // Hash da senha
             $senha_hash = password_hash($senha_bruta, PASSWORD_DEFAULT);
             
             // Stats iniciais baseados na classe
@@ -71,30 +88,144 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
             
             $stats = $stats_iniciais[$classe_base] ?? $stats_iniciais['Guerreiro'];
-            
-            // Insere novo personagem
+            $hp_max = 100; 
+            $mana_max = 50;
+
             $sql_insert = "INSERT INTO personagens 
                 (nome, email, senha_hash, classe_base, level, ouro, xp_atual, xp_proximo_level,
                  str, dex, con, int_stat, wis, cha, hp_max, hp_atual, mana_max, mana_atual,
                  pontos_atributo_disponiveis, pontos_habilidade_disponiveis, fama_rank)
-                VALUES (
-                    '{$nome}', '{$email}', '{$senha_hash}', '{$classe_base}', 1, 100, 0, 100,
-                    {$stats['str']}, {$stats['dex']}, {$stats['con']}, {$stats['int_stat']}, 
-                    {$stats['wis']}, {$stats['cha']}, 100, 100, 50, 50,
-                    5, 2, 'Novato'
-                )";
+                VALUES (?, ?, ?, ?, 1, 100, 0, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 2, 'Novato')";
             
-            if ($conexao->query($sql_insert)) {
+            $stmt_insert = $conexao->prepare($sql_insert);
+            $stmt_insert->bind_param("ssssiiiiiiiiiiii",
+                $nome, $email, $senha_hash, $classe_base,
+                $stats['str'], $stats['dex'], $stats['con'], $stats['int_stat'],
+                $stats['wis'], $stats['cha'], $hp_max, $hp_max, $mana_max, $mana_max
+            );
+
+            if ($stmt_insert->execute()) {
                 $mensagem = "<div class='feedback feedback-success'>✨ Personagem criado com sucesso! Faça login para começar sua jornada.</div>";
                 $modo = 'login';
             } else {
-                $mensagem = "<div class='feedback feedback-error'>❌ Erro ao criar personagem. Tente novamente.</div>";
+                $mensagem = "<div class='feedback feedback-error'>❌ Erro ao criar personagem: " . $stmt_insert->error . "</div>";
                 $modo = 'registro';
             }
+            $stmt_insert->close();
         }
+        $stmt_check->close();
     }
 }
 ?>
+
+<?php if ($mostrar_prologo): ?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prólogo - Arcana Duality</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            background-color: #000; 
+            color: #ccc; 
+            margin: 0; 
+            padding: 0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .prologo-container { 
+            max-width: 800px; 
+            padding: 40px; 
+            text-align: left; 
+            line-height: 1.6; 
+            border: 1px solid #555; 
+            background-color: #111; 
+            box-shadow: 0 0 20px rgba(138, 43, 226, 0.3);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .prologo-container p { 
+            margin: 0 0 1em 0; 
+        }
+        .highlight { 
+            color: #FF00FF;
+            font-weight: bold; 
+        }
+        .system-message { 
+            color: #00FFFF;
+            border: 1px dashed #00FFFF; 
+            padding: 10px; 
+            margin-top: 15px; 
+        }
+        .continue-link { 
+            display: block; 
+            margin-top: 30px; 
+            text-align: center; 
+            color: #50C878; 
+            text-decoration: none; 
+            font-weight: bold; 
+            border: 1px solid #50C878; 
+            padding: 15px; 
+            transition: all 0.3s ease;
+            border-radius: 8px;
+        }
+        .continue-link:hover { 
+            background-color: #50C878; 
+            color: #111; 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(80, 200, 120, 0.3);
+        }
+        @keyframes fadeIn { 
+            from { opacity: 0; } 
+            to { opacity: 1; } 
+        }
+        .prologo-container { 
+            animation: fadeIn 2s ease-in; 
+        }
+        .character-name {
+            color: #FFF;
+            font-weight: bold;
+        }
+        .alert {
+            color: #FF4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="prologo-container">
+        <p class="alert">...Alarme da Cidade Central: [NÍVEL DE AMEAÇA: CÁRMINA]. Fenda de Nível 4 detectada no Distrito 7. EVACUAR. [cite_start]EVACUAR. [cite: 58]</p>
+        <p><em>(O som de vidro se quebrando, mas em escala cósmica, ecoa em sua mente.)</em></p>
+        [cite_start]<p><strong class="character-name">ELARA:</strong> "Corre! Pela minha esquerda! O abrigo é a duas quadras!" [cite: 58]</p>
+        <p>Você corre. O asfalto racha à sua frente. [cite_start]Uma fissura negra, pulsando com energia <span style="color: #8A2BE2;">púrpura</span>, rasga o concreto. [cite: 59]</p>
+        [cite_start]<p><strong class="character-name">ELARA:</strong> "Não... não aqui..." [cite: 59]</p>
+        <p>Garras feitas de pura sombra irrompem da Fenda. Elas ignoram você. [cite_start]Elas vão direto para Elara. [cite: 60]</p>
+        [cite_start]<p><strong class="character-name alert">ELARA:</strong> "NÃO! ME SOLTA! CORRE!" [cite: 60]</p>
+        <p>Você tenta puxá-la. Suas mãos agarram o nada. As garras a envolvem. [cite_start]Os olhos dela encontram os seus, um terror silencioso que grita seu nome. [cite: 61]</p>
+        <p>Ela é puxada para dentro do rasgo. A Fenda se fecha. [cite_start]O silêncio é ensurdecedor. [cite: 61]</p>
+        <p>Sua mente se estilhaça. [cite_start]O mundo se dissolve em dor e um zumbido agudo... [cite: 62]</p>
+        <p>...</p>
+        <p>...</p>
+        <div class="system-message">
+            <p class="highlight">[ BEM-VINDO, RECEPTÁCULO. [cite_start]] [cite: 62]</p>
+            <p class="highlight">[ SISTEMA ATIVADO. [cite_start]] [cite: 62]</p>
+            <p class="highlight">[ SINCRONIZANDO FRAGMENTO... ERRO. [cite_start]] [cite: 63]</p>
+            <p class="highlight">[...SINCRONIZAÇÃO FORÇADA. [cite_start]] [cite: 63]</p>
+            [cite_start]<p>[ SAÚDE: 1% ] [cite: 63]</p>
+            [cite_start]<p>[ CONDIÇÃO: TRAUMA DE FENDA (SEVERO) ] [cite: 63]</p>
+        </div>
+        [cite_start]<p>...Você desmaia. [cite: 63]</p>
+
+        <a href="despertar.php" class="continue-link">🌌 Continuar para o Despertar...</a>
+    </div>
+</body>
+</html>
+<?php exit; ?>
+<?php endif; ?>
 
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -103,7 +234,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $titulo_pagina; ?></title>
     <style>
-        /* CORREÇÃO CRÍTICA - PERMITIR CLICKS */
         .login-container {
             min-height: 100vh;
             background: linear-gradient(135deg, #1a1a1a 0%, #1a0a2a 100%);
@@ -123,10 +253,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             max-width: 500px;
             box-shadow: 0 20px 40px rgba(138, 43, 226, 0.3);
             position: relative;
-        }
-
-        /* REMOVER O ::before PROBLEMÁTICO E USAR BACKGROUND NORMAL */
-        .portal-card {
             background: linear-gradient(135deg, #2a2a2a 0%, #2a1a3a 100%);
         }
 
@@ -436,7 +562,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label">⚔️ Escolha sua Classe</label>
                     <div class="class-selection" id="classSelection">
-                        <div class="class-option selected" data-class="Guerreiro">
+                        <div class="class-option" data-class="Guerreiro">
                             <div class="class-icon">🛡️</div>
                             <div class="class-name">Guerreiro</div>
                             <div class="class-desc">Força & Defesa</div>
@@ -520,7 +646,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
 
             // Seleciona Guerreiro por padrão
-            document.querySelector('.class-option[data-class="Guerreiro"]').click();
+            const defaultClass = document.querySelector('.class-option[data-class="Guerreiro"]');
+            if (defaultClass) defaultClass.click();
 
             // Efeitos visuais para inputs
             const inputs = document.querySelectorAll('.form-input');
