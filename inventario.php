@@ -22,13 +22,6 @@ $mensagem_feedback = "";
 // PROCESSAR AÇÕES DO INVENTÁRIO
 // =============================================================================
 
-// Lógica de Logout (no topo para evitar erros de header)
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header('Location: login.php');
-    exit;
-}
-
 // Lógica de Venda
 if (isset($_GET['acao']) && $_GET['acao'] === 'vender') {
     $id_linha_inventario = (int)$_GET['item_id']; 
