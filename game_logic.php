@@ -504,62 +504,121 @@ function atribuir_quest($player_id, $quest_id, $conexao) {
 }
 
 /**
- * Atualiza o progresso de uma quest ativa do jogador.
+ * Atualiza o progresso de quests ativas do jogador que correspondem a uma ação realizada.
+ * Muda o status para 'completa' se o objetivo for atingido.
+ * Adiciona logs detalhados e retorna true em caso de sucesso na atualização.
  *
  * @param int $player_id ID do jogador.
- * @param string $tipo_acao Tipo da ação realizada ('matar', 'coletar', etc.).
- * @param int $id_alvo ID do monstro/item relacionado à ação.
- * @param int $quantidade Quantidade realizada (normalmente 1).
- * @param object $conexao Conexão com o banco de dados.
+ * @param string $tipo_acao Tipo da ação ('matar', 'coletar', etc.).
+ * @param int $id_alvo ID do alvo da ação (ID do monstro, item, NPC).
+ * @param int $quantidade Quantidade realizada.
+ * @param mysqli $conexao Objeto de conexão MySQLi.
+ * @return bool True se alguma quest foi atualizada com sucesso, False caso contrário.
  */
 function atualizar_progresso_quest($player_id, $tipo_acao, $id_alvo, $quantidade, $conexao) {
-    // Busca quests ATIVAS do jogador que correspondem à ação
-    $sql_find_quests = "SELECT pq.id as player_quest_id, pq.progresso_atual, qb.quantidade_objetivo, qb.id as quest_base_id
+    // Log inicial para rastrear a chamada
+    error_log("--> [GAME_LOGIC] atualizar_progresso_quest: Chamada para Player $player_id, Acao '$tipo_acao', Alvo $id_alvo, Qtd $quantidade");
+
+    $sql_find_quests = "SELECT pq.id as player_quest_id, pq.progresso_atual, pq.status as status_atual,
+                               qb.quantidade_objetivo, qb.id as quest_base_id, qb.titulo
                         FROM player_quests pq
                         JOIN quests_base qb ON pq.quest_id = qb.id
                         WHERE pq.player_id = ?
-                        AND pq.status IN ('aceita', 'em_progresso')
-                        AND qb.tipo_objetivo = ?
-                        AND qb.id_objetivo = ?"; // Assume que o id_objetivo corresponde (ex: ID do monstro)
+                        AND pq.status IN ('aceita', 'em_progresso') -- Apenas quests ativas
+                        AND qb.tipo_objetivo = ?                     -- Ex: 'matar'
+                        AND qb.id_objetivo = ?";                     // Ex: ID do monstro (1)
 
     $stmt_find = $conexao->prepare($sql_find_quests);
+    // Verifica se a preparação da query falhou
+    if (!$stmt_find) {
+        error_log("[GAME_LOGIC] atualizar_progresso_quest: Erro ao preparar SELECT: " . $conexao->error);
+        return false; // Retorna falha
+    }
+
     $stmt_find->bind_param("isi", $player_id, $tipo_acao, $id_alvo);
     $stmt_find->execute();
     $quests_afetadas = $stmt_find->get_result();
 
-    while ($quest = $quests_afetadas->fetch_assoc()) {
-        $novo_progresso = min($quest['progresso_atual'] + $quantidade, $quest['quantidade_objetivo']);
-        $novo_status = ($novo_progresso >= $quest['quantidade_objetivo']) ? 'completa' : 'em_progresso';
-
-        $sql_update = "UPDATE player_quests SET progresso_atual = ?, status = ? WHERE id = ?";
-        $stmt_update = $conexao->prepare($sql_update);
-        $stmt_update->bind_param("isi", $novo_progresso, $novo_status, $quest['player_quest_id']);
-        $stmt_update->execute();
-
-        // Se completou, pode adicionar um feedback aqui ou chamar outra função
-        if ($novo_status === 'completa') {
-             // Você pode querer adicionar uma notificação para o jogador
-             // Ex: $_SESSION['notificacoes'][] = "Quest '" . $titulo_quest . "' completada!";
-        }
+    if ($quests_afetadas->num_rows == 0) {
+        error_log("[GAME_LOGIC] atualizar_progresso_quest: Nenhuma quest ativa encontrada correspondendo à ação (Player: $player_id, Acao: '$tipo_acao', Alvo: $id_alvo).");
+        $stmt_find->close(); // Fecha o statement mesmo se não encontrar nada
+        return false; // Nenhuma quest afetada
     }
+
+    $atualizacao_ocorreu = false; // Flag para indicar se alguma atualização teve sucesso
+    while ($quest = $quests_afetadas->fetch_assoc()) {
+        error_log("[GAME_LOGIC] atualizar_progresso_quest: Encontrada quest ID {$quest['player_quest_id']} ('{$quest['titulo']}'). Progresso: {$quest['progresso_atual']}/{$quest['quantidade_objetivo']}, Status: {$quest['status_atual']}");
+
+        // Só tenta atualizar se o progresso atual for menor que o objetivo
+        if ($quest['progresso_atual'] < $quest['quantidade_objetivo']) {
+            $novo_progresso = min($quest['progresso_atual'] + $quantidade, $quest['quantidade_objetivo']);
+            // Define novo status: 'completa' se atingiu, senão mantém ou muda para 'em_progresso'
+            $novo_status = ($novo_progresso >= $quest['quantidade_objetivo']) ? 'completa' : 'em_progresso';
+
+            error_log("[GAME_LOGIC] atualizar_progresso_quest: Calculado Novo Progresso: $novo_progresso, Novo Status: '$novo_status' para player_quest_id {$quest['player_quest_id']}");
+
+            $sql_update = "UPDATE player_quests SET progresso_atual = ?, status = ? WHERE id = ?";
+            $stmt_update = $conexao->prepare($sql_update);
+            // Verifica se a preparação do UPDATE falhou
+            if (!$stmt_update) {
+                error_log("[GAME_LOGIC] atualizar_progresso_quest: Erro ao preparar UPDATE para player_quest_id {$quest['player_quest_id']}: " . $conexao->error);
+                continue; // Pula para a próxima quest encontrada, se houver
+            }
+
+            $stmt_update->bind_param("isi", $novo_progresso, $novo_status, $quest['player_quest_id']);
+            // Verifica se a execução do UPDATE falhou
+            if ($stmt_update->execute()) {
+                error_log("[GAME_LOGIC] atualizar_progresso_quest: UPDATE bem-sucedido para player_quest_id {$quest['player_quest_id']}.");
+                $atualizacao_ocorreu = true; // Marca que pelo menos uma atualização funcionou
+
+                // Adiciona feedback na sessão SOMENTE se o status mudou para 'completa'
+                if ($novo_status === 'completa' && $quest['status_atual'] !== 'completa') {
+                    // Usa feedback_temporario para mensagens gerais
+                    $_SESSION['feedback_temporario'] = ($_SESSION['feedback_temporario'] ?? '') . "<div class='feedback feedback-success quest-notification'>✅ Missão Concluída: <em>" . htmlspecialchars($quest['titulo']) . "</em>! Retorne ao NPC para entregar.</div>";
+                    error_log("[GAME_LOGIC] atualizar_progresso_quest: Quest ID {$quest['player_quest_id']} ('{$quest['titulo']}') marcada como COMPLETA.");
+                }
+            } else {
+                error_log("[GAME_LOGIC] atualizar_progresso_quest: ERRO ao executar UPDATE para player_quest_id {$quest['player_quest_id']}: " . $stmt_update->error);
+            }
+            $stmt_update->close(); // Fecha o statement de update
+        } else {
+             error_log("[GAME_LOGIC] atualizar_progresso_quest: Quest ID {$quest['player_quest_id']} já estava completa ou com progresso máximo. Nenhuma atualização necessária.");
+        }
+    } // Fim while
+
+    $stmt_find->close(); // Fecha o statement de select
+    error_log("<-- [GAME_LOGIC] atualizar_progresso_quest: FIM. Atualização ocorreu? " . ($atualizacao_ocorreu ? 'SIM' : 'NÃO'));
+    return $atualizacao_ocorreu; // Retorna true se alguma quest foi atualizada
 }
 
 /**
- * Verifica se uma quest específica está completa para o jogador.
+ * Verifica se uma quest específica está com status 'completa' para o jogador.
+ * Adiciona logs detalhados e tratamento de erro.
  *
  * @param int $player_id ID do jogador.
  * @param int $quest_id ID da quest base.
- * @param object $conexao Conexão com o banco de dados.
- * @return bool True se a quest está com status 'completa'.
+ * @param mysqli $conexao Objeto de conexão MySQLi.
+ * @return bool True se a quest está completa, False caso contrário ou em erro.
  */
 function is_quest_completa($player_id, $quest_id, $conexao) {
-    $sql = "SELECT id FROM player_quests WHERE player_id = ? AND quest_id = ? AND status = 'completa'";
+    // Usar SELECT 1 é um pouco mais eficiente que SELECT id
+    $sql = "SELECT 1 FROM player_quests WHERE player_id = ? AND quest_id = ? AND status = 'completa' LIMIT 1";
     $stmt = $conexao->prepare($sql);
+    // Verifica falha na preparação
+    if (!$stmt) {
+        error_log("[GAME_LOGIC] is_quest_completa: Erro ao preparar SELECT: " . $conexao->error);
+        return false; // Retorna false em caso de erro
+    }
     $stmt->bind_param("ii", $player_id, $quest_id);
     $stmt->execute();
-    return $stmt->get_result()->num_rows > 0;
-}
+    $result = $stmt->get_result();
+    $completa = $result->num_rows > 0;
+    $stmt->close(); // Fecha o statement
 
+    // Log para depuração
+    error_log("[GAME_LOGIC] is_quest_completa: Verificando Player $player_id, Quest $quest_id. Status 'completa'? " . ($completa ? 'SIM' : 'NÃO'));
+    return $completa;
+}
 /**
  * Entrega uma quest completa, dando as recompensas.
  *
@@ -619,4 +678,5 @@ function entregar_quest($player_id, $quest_id, $conexao) {
 
     return ['sucesso' => true, 'mensagem' => "Quest '{$quest_data['titulo']}' entregue! {$mensagem_recompensa}"];
 }
+
 ?>

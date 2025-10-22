@@ -664,21 +664,70 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
         $mensagem_combate .= "<p>💰 Você ganhou <strong>{$xp_ganho} XP</strong> e <strong>{$ouro_ganho} Ouro</strong>!</p>";
     }
 
-    // Atualizar missão de matar monstros
-    atualizar_progresso_missao($player_id, 'matar_monstros', 1, $conexao);
-    atualizar_progresso_achievement($player_id, 'monstros_derrotados', 1, $conexao);
-
-    // ---> NOVO: ATUALIZAR PROGRESSO DA QUEST <---
-    if ($is_quest_combate && $monstro['id_base'] == $id_monstro_quest) {
-        atualizar_progresso_quest($player_id, 'matar', $id_monstro_quest, 1, $conexao);
-        $quest_objetivo_atual++; // Atualiza a contagem local para exibição
-        $mensagem_combate .= "<div class='log-entry log-system'>🎯 Progresso da Missão: {$quest_objetivo_atual}/{$quest_objetivo_total} Slimes eliminados.</div>";
-
-        // Verifica se completou a quest AGORA
-        if ($quest_objetivo_atual >= $quest_objetivo_total) {
-             $mensagem_combate .= "<div class='log-entry log-system' style='color: var(--accent-vital);'>✅ **OBJETIVO DA MISSÃO COMPLETO!** Retorne a Kaelen na Guilda.</div>";
-        }
+    // Atualizar missão diária de matar monstros (código original)
+    if (function_exists('atualizar_progresso_missao')) { // Verifica se a função existe
+        atualizar_progresso_missao($player_id, 'matar_monstros', 1, $conexao);
     }
+    // Atualizar achievement de monstros derrotados (código original)
+    if (function_exists('atualizar_progresso_achievement')) { // Verifica se a função existe
+        atualizar_progresso_achievement($player_id, 'monstros_derrotados', 1, $conexao);
+    }
+
+
+   // ---> INÍCIO DA LÓGICA DE ATUALIZAÇÃO DA QUEST (AJUSTADA) <---
+    if ($is_quest_combate && isset($monstro['id_base']) && $monstro['id_base'] == $id_monstro_quest) {
+        // Log para confirmar entrada na lógica
+        error_log("[COMBATE VITORIA - Original] Quest ativa (ID: $quest_id_ativa), Monstro correto (ID: {$monstro['id_base']}). Chamando atualizar_progresso_quest...");
+
+        $quest_foi_atualizada = false; // Flag para saber se o update ocorreu
+        if (function_exists('atualizar_progresso_quest')) {
+            // Chama a função para atualizar
+            $quest_foi_atualizada = atualizar_progresso_quest($player_id, 'matar', $id_monstro_quest, 1, $conexao);
+            error_log("[COMBATE VITORIA - Original] Resultado de atualizar_progresso_quest: " . ($quest_foi_atualizada ? 'Sucesso (true)' : 'Falha (false)'));
+        } else {
+             error_log("[COMBATE VITORIA - Original] ERRO FATAL: Função atualizar_progresso_quest não existe!");
+             $mensagem_combate .= "<div class='log-entry log-error'>Erro: Sistema de quests indisponível.</div>";
+        }
+
+        // SEMPRE RECARREGA o progresso do banco DEPOIS de tentar atualizar
+        $sql_reload_prog = "SELECT progresso_atual, status FROM player_quests WHERE player_id = ? AND quest_id = ?";
+        $stmt_reload = $conexao->prepare($sql_reload_prog);
+        $prog_reloaded_data = null; // Para armazenar os dados recarregados
+        if ($stmt_reload) {
+            $stmt_reload->bind_param("ii", $player_id, $quest_id_ativa);
+            $stmt_reload->execute();
+            $prog_reloaded_data = $stmt_reload->get_result()->fetch_assoc();
+            $stmt_reload->close();
+        } else {
+             error_log("[COMBATE VITORIA - Original] Erro prepare reload progresso quest: ".$conexao->error);
+             $mensagem_combate .= "<div class='log-entry log-error'>Erro DB ao verificar progresso da missão.</div>";
+        }
+
+        // Atualiza as variáveis locais COM BASE NO QUE FOI LIDO DO BANCO
+        if ($prog_reloaded_data) {
+            $progresso_quest_atual = (int)$prog_reloaded_data['progresso_atual']; // ATUALIZA a variável local crucial!
+            $status_quest_atual = $prog_reloaded_data['status'];
+            error_log("[COMBATE VITORIA - Original] Status da quest APÓS tentativa de update (lido do BD): Progresso=$progresso_quest_atual, Status=$status_quest_atual");
+
+            // Exibe mensagem de progresso no log do jogo
+            $mensagem_combate .= "<div class='log-entry log-system quest-progress'>🎯 Progresso da Missão: {$progresso_quest_atual}/{$objetivo_quest} Slimes eliminados.</div>";
+
+            // Exibe mensagem de conclusão SE o status lido for 'completa'
+            if ($status_quest_atual === 'completa') {
+                $mensagem_combate .= "<div class='log-entry log-system quest-complete' style='color: var(--accent-vital);'>✅ **OBJETIVO DA MISSÃO COMPLETO!** Retorne a Kaelen na Guilda.</div>";
+                error_log("[COMBATE VITORIA - Original] Quest $quest_id_ativa está como COMPLETA no BD.");
+            }
+        } else {
+             // Se falhou ao recarregar, mantém o progresso antigo incrementado localmente (menos ideal)
+             $progresso_quest_atual++; // Incrementa localmente como fallback
+             $mensagem_combate .= "<div class='log-entry log-error'>Atenção: Não foi possível confirmar o progresso da missão no banco. Exibindo contagem local: {$progresso_quest_atual}/{$objetivo_quest}</div>";
+             error_log("[COMBATE VITORIA - Original] Falha ao recarregar progresso. Usando incremento local: $progresso_quest_atual");
+        }
+
+    } elseif ($is_quest_combate) {
+         error_log("[COMBATE VITORIA - Original] Quest ativa, mas ID do monstro não correspondeu (Monstro: ".($monstro['id_base'] ?? 'N/A').", Esperado: $id_monstro_quest).");
+    }
+    // ***** FIM DA LÓGICA DE ATUALIZAÇÃO DA QUEST *****
     
     // Verifica level up
     $player_data_atualizado = $conexao->query("SELECT * FROM personagens WHERE id = $player_id")->fetch_assoc();
@@ -771,26 +820,29 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
         }
     }
     
-    // ---> AJUSTE NOS BOTÕES PÓS-COMBATE <---
-    // Se estava em missão e completou, oferecer botão para voltar à guilda
-    if ($is_quest_combate && $quest_objetivo_atual >= $quest_objetivo_total) {
-        $mensagem_combate .= "<div class='post-combat-actions'>";
+    // Botões Pós-Combate (Usa $progresso_quest_atual ATUALIZADO PELO BANCO)
+    $mensagem_combate .= "<div class='post-combat-actions'>";
+    if ($is_quest_combate && isset($status_quest_atual) && $status_quest_atual === 'completa') { // Verifica o STATUS lido
         $mensagem_combate .= "<a href='cidade.php' class='btn btn-primary'>🏛️ VOLTAR PARA GUILDA</a>";
-        $mensagem_combate .= "<a href='personagem.php' class='btn'>👤 VER PERSONAGEM</a>";
-        $mensagem_combate .= "</div>";
     } elseif ($is_quest_combate) {
-         // Se ainda está na missão, permite continuar na área
-         $mensagem_combate .= "<div class='post-combat-actions'>";
-         $mensagem_combate .= "<a href='combate_portal.php?missao=custo_poder' class='btn btn-primary'>🔄 CONTINUAR MISSÃO</a>";
-         $mensagem_combate .= "<a href='cidade.php' class='btn'>🏳️ RETORNAR À CIDADE</a>";
-         $mensagem_combate .= "</div>";
-    } 
-    
+        $mensagem_combate .= "<a href='combate_portal.php?missao=custo_poder' class='btn btn-primary'>🔄 CONTINUAR MISSÃO</a>";
+        $mensagem_combate .= "<a href='cidade.php' class='btn'>🏳️ RETORNAR À CIDADE</a>";
+    } else { // Se não for quest combate
+        // ... (botões originais de Novo Combate / Voltar Mapa) ...
+         $mensagem_combate .= "<a href='combate_portal.php?rank={$rank_escolhido}' class='btn btn-primary'>🔄 NOVO COMBATE</a>";
+         $mensagem_combate .= "<a href='mapa.php' class='btn'>🗺️ VOLTAR AO MAPA</a>";
+    }
+     $mensagem_combate .= "<a href='personagem.php' class='btn'>👤 VER PERSONAGEM</a>";
+    $mensagem_combate .= "</div>"; // Fim post-combat-actions
+
+
     // Limpa status do combate ao vencer
-    $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($combate_id) . "'");
-    unset($_SESSION['combate_ativo']);
-    unset($_SESSION['combate_rank']);
-    unset($_SESSION['combate_id']);
+    if (isset($_SESSION['combate_id'])) {
+         $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($_SESSION['combate_id']) . "'");
+     }
+     unset($_SESSION['combate_ativo']);
+     unset($_SESSION['combate_rank']);
+     unset($_SESSION['combate_id']);
     
 }
 
