@@ -4,6 +4,15 @@ include 'db_connect.php';
 
 $titulo_pagina = "Portal de Acesso - Arcana Duality";
 $pagina_atual = 'login';
+// --- NOVO: Captura o redirecionamento pós-login ---
+if (isset($_GET['next']) && $_GET['next'] === 'kaelen') {
+    $_SESSION['redirect_on_login'] = 'npc_interact.php?npc_id=10';
+    // Força o modo de registro se o prólogo acabou de ser visto
+    if (isset($_SESSION['prologo_visto']) && !isset($_SESSION['player_id'])) {
+        $_GET['modo'] = 'registro';
+    }
+}
+// --- FIM DA NOVA SEÇÃO ---
 
 // --- Lógica de Prólogo ---
 // Verifica se o usuário já viu o prólogo OU se está logado
@@ -17,7 +26,7 @@ if (!isset($_SESSION['prologo_visto']) && !isset($_SESSION['player_id'])) {
 // VERIFICAÇÃO DE SESSÃO EXISTENTE (Se já logado, vai pro inventário)
 // =============================================================================
 if (isset($_SESSION['player_id'])) {
-    header('Location: inventario.php');
+    header('Location: cidade.php');
     exit;
 }
 
@@ -51,8 +60,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['player_level'] = $usuario['level'];
             $_SESSION['player_classe'] = $usuario['classe_base'];
             
-            header('Location: inventario.php');
+            // --- LÓGICA DE REDIRECIONAMENTO MODIFICADA ---
+            if (isset($_SESSION['redirect_on_login'])) {
+                $redirect_url = $_SESSION['redirect_on_login'];
+                unset($_SESSION['redirect_on_login']);
+                header('Location: ' . $redirect_url);
+            } else {
+                header('Location: cidade.php'); // Destino padrão (mudado de inventario.php)
+            }
             exit;
+            // --- FIM DA LÓGICA MODIFICADA ---
         } else {
             $mensagem = "<div class='feedback feedback-error'>❌ Credenciais inválidas. Tente novamente.</div>";
             $modo = 'login';

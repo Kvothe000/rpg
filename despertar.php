@@ -72,16 +72,18 @@ if ($escolha_feita == 1) {
             <?php endif; ?>
         </div>
 
-        <?php if ($mostrar_opcoes): // Mostra opções se a conversa não terminou ?>
+<?php if ($mostrar_opcoes): // Mostra opções se a conversa não terminou ?>
             <div class="opcoes">
-                <p>[Sistema]: O que você faz?</p>
                 <a href="despertar.php?escolha=1">1. "Onde eu estou? O que aconteceu?"</a>
                 <a href="despertar.php?escolha=2">2. "Elara! Onde está Elara? Ela sobreviveu?"</a>
                 <a href="despertar.php?escolha=3">3. (Tentar se levantar)</a>
                 <a href="despertar.php?escolha=4">4. (Ficar em silêncio e observar a UI)</a>
             </div>
-        <?php elseif ($link_prosseguir): // Mostra o link para Kaelen se a conversa terminou ?>
-            <div class="center-link"> <a href="<?php echo $link_prosseguir; ?>" class="prosseguir-link">Ir encontrar o Comandante Kaelen...</a>
+        <?php elseif ($link_prosseguir): // Mostra o link se a conversa terminou ?>
+            <div class="center-link">
+                 <a href="login.php?next=kaelen" class="prosseguir-link">
+                     Entrar / Registrar-se para encontrar o Comandante Kaelen...
+                 </a>
             </div>
         <?php endif; ?>
 
