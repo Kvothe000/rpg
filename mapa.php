@@ -1,5 +1,5 @@
 <?php
-// mapa.php - CORREÇÕES CRÍTICAS
+// mapa.php - ATUALIZADO COM NOVO SISTEMA DE MAPA INTERATIVO
 session_start();
 include_once 'db_connect.php';
 
@@ -64,36 +64,86 @@ try {
     error_log("Erro ao gerar dungeon: " . $e->getMessage());
 }
 
-// REGIÕES DO MAPA CORRIGIDAS
+// (ATUALIZADO) Trazemos a definição dos portais para aqui
+$portais = [
+    'E' => [
+        'nome' => 'Campo dos Slimes',
+        'tipo' => 'Floresta',
+        'nivel_minimo' => 1,
+        'dificuldade' => '⭐ Fácil',
+        'dificuldade_cor' => '#50C878'
+    ],
+    'D' => [
+        'nome' => 'Acampamento Goblin',
+        'tipo' => 'Acampamento',
+        'nivel_minimo' => 5,
+        'dificuldade' => '🔥 Médio',
+        'dificuldade_cor' => '#FFD166'
+    ],
+    'C' => [
+        'nome' => 'Ruínas Assombradas',
+        'tipo' => 'Ruínas',
+        'nivel_minimo' => 15,
+        'dificuldade' => '💀 Difícil',
+        'dificuldade_cor' => '#FF4444'
+    ],
+    'B' => [
+        'nome' => 'Picos Congelados',
+        'tipo' => 'Montanha',
+        'nivel_minimo' => 25,
+        'dificuldade' => '⚔️ Muito Difícil',
+        'dificuldade_cor' => '#3A86FF'
+    ],
+    'A' => [
+        'nome' => 'Coração do Abismo',
+        'tipo' => 'Abismo',
+        'nivel_minimo' => 40,
+        'dificuldade' => '☠️ Lendário',
+        'dificuldade_cor' => '#8A2BE2'
+    ],
+    'S' => [
+        'nome' => 'Fenda Temporal',
+        'tipo' => 'Paradoxo',
+        'nivel_minimo' => 50,
+        'dificuldade' => '🌌 Divino',
+        'dificuldade_cor' => '#FF00FF'
+    ]
+];
+
+// REGIÕES DO MAPA CORRIGIDAS (Coordenadas ajustadas)
 $regioes = [
     'floresta_corrompida' => [
         'nome' => 'Floresta Corrompida',
         'nivel' => '1-10',
         'status' => $player_data['level'] >= 1 ? 'descoberta' : 'oculta',
-        'descricao' => 'Uma floresta onde a Fenda Arcana deixou suas marcas.',
         'portais' => ['E', 'D'],
         'cor' => '#2E8B57',
-        'coordenadas' => 'x: 120, y: 80'
+        'coordenadas' => 'x: 50, y: 50' // <-- MUDADO
     ],
-    'montanhas_gélidas' => [
+    'montanhas_gélidas' => [ 
         'nome' => 'Montanhas Gélidas', 
         'nivel' => '10-25',
         'status' => $player_data['level'] >= 10 ? 'descoberta' : 'oculta',
-        'descricao' => 'Picos congelados onde criaturas antigas habitam.',
         'portais' => ['C', 'B'],
         'cor' => '#4682B4',
-        'coordenadas' => 'x: 300, y: 40'
+        'coordenadas' => 'x: 400, y: 220' // <-- MUDADO (mais à direita)
     ],
     'abismo_eterno' => [
         'nome' => 'Abismo Eterno',
         'nivel' => '25-50', 
         'status' => $player_data['level'] >= 25 ? 'descoberta' : 'oculta',
-        'descricao' => 'Onde a própria realidade se desfaz em paradoxos.',
         'portais' => ['A', 'S'],
         'cor' => '#4B0082',
-        'coordenadas' => 'x: 200, y: 200'
+        'coordenadas' => 'x: 50, y: 280' // <-- MUDADO (mais para baixo)
     ]
 ];
+
+// (NOVO) Lógica de Flash Message (para caso de derrota)
+$flash_message = "";
+if (isset($_SESSION['flash_message'])) {
+    $flash_message = $_SESSION['flash_message'];
+    unset($_SESSION['flash_message']); // Limpa a mensagem
+}
 
 include 'header.php';
 ?>
@@ -109,223 +159,86 @@ include 'header.php';
         </p>
     </div>
 
-    <!-- RESUMO DO PERSONAGEM CORRIGIDO -->
-    <div class="grid-2-col">
-        <div class="section section-vital">
-            <h2 class="section-header vital">👤 STATUS DO CAÇADOR</h2>
-            <div class="character-summary">
-                <div class="char-info-grid">
-                    <div class="char-info-item">
-                        <div class="char-label">Nome</div>
-                        <div class="char-value"><?php echo htmlspecialchars($player_data['nome'] ?? 'Desconhecido'); ?></div>
-                    </div>
-                    <div class="char-info-item">
-                        <div class="char-label">Nível</div>
-                        <div class="char-value" id="player-level"><?php echo (int)($player_data['level'] ?? 1); ?></div>
-                    </div>
-                    <div class="char-info-item">
-                        <div class="char-label">Classe</div>
-                        <div class="char-value"><?php echo htmlspecialchars($player_data['classe_base'] ?? 'Aventureiro'); ?></div>
-                    </div>
-                    <div class="char-info-item">
-                        <div class="char-label">Rank</div>
-                        <div class="char-value"><?php echo htmlspecialchars($player_data['fama_rank'] ?? 'Iniciante'); ?></div>
-                    </div>
-                </div>
-                
-                <div class="progress-item">
-                    <div class="progress-label">
-                        <span>Progresso para o próximo nível</span>
-                        <span><?php echo (int)($player_data['xp_atual'] ?? 0); ?>/<?php echo (int)($player_data['xp_proximo_level'] ?? 100); ?></span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill xp-fill" style="width: <?php echo min(100, (($player_data['xp_atual'] ?? 0) / max(1, ($player_data['xp_proximo_level'] ?? 100))) * 100); ?>%"></div>
-                    </div>
-                </div>
-            </div>
+    <!-- MENSAGEM DE FEEDBACK -->
+    <?php if ($flash_message): ?>
+        <div class="feedback feedback-error" style="border-color: var(--status-hp); color: var(--status-hp);">
+            <?php echo $flash_message; ?>
         </div>
+    <?php endif; ?>
 
-        <!-- ESTATÍSTICAS RÁPIDAS -->
-        <div class="section section-arcane">
-            <h2 class="section-header">📊 ESTATÍSTICAS</h2>
-            <div class="stat-grid-small">
-                <div class="stat-card-small">
-                    <div class="stat-icon">💰</div>
-                    <div class="stat-content">
-                        <div class="stat-value gold-value"><?php echo number_format($player_data['ouro'] ?? 0); ?></div>
-                        <div class="stat-label">Ouro</div>
-                    </div>
-                </div>
-                
-                <div class="stat-card-small">
-                    <div class="stat-icon">⚔️</div>
-                    <div class="stat-content">
-                        <div class="stat-value"><?php echo count($regioes); ?></div>
-                        <div class="stat-label">Regiões</div>
-                    </div>
-                </div>
-                
-                <div class="stat-card-small">
-                    <div class="stat-icon">❤️</div>
-                    <div class="stat-content">
-                        <div class="stat-value"><?php echo (int)($player_data['hp_atual'] ?? 0); ?>/<?php echo (int)($player_data['hp_max'] ?? 100); ?></div>
-                        <div class="stat-label">Vida</div>
-                    </div>
-                </div>
-                
-                <div class="stat-card-small">
-                    <div class="stat-icon">🔷</div>
-                    <div class="stat-content">
-                        <div class="stat-value"><?php echo (int)($player_data['mana_atual'] ?? 0); ?>/<?php echo (int)($player_data['mana_max'] ?? 50); ?></div>
-                        <div class="stat-label">
-                            <?php echo (($player_data['classe_base'] ?? '') === 'Mago' || ($player_data['classe_base'] ?? '') === 'Sacerdote') ? 'Mana' : 'Fúria'; ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    
 
-    <!-- MAPA INTERATIVO SIMPLIFICADO -->
+    <!-- MAPA INTERATIVO ATUALIZADO -->
     <div class="section section-vital">
         <h2 class="section-header vital">🌍 MAPA INTERATIVO</h2>
         <div class="world-map-container">
             <div class="world-map">
                 <?php foreach ($regioes as $id => $regiao): ?>
-                <div class="map-region <?php echo $regiao['status']; ?>" 
-                     style="border-color: <?php echo $regiao['cor']; ?>; left: <?php echo explode(': ', $regiao['coordenadas'])[1] ?? '100px'; ?>; top: <?php echo explode(', y: ', $regiao['coordenadas'])[1] ?? '100px'; ?>;"
-                     data-region="<?php echo $id; ?>"
-                     data-tooltip="<?php echo $regiao['nome']; ?> - Nv. <?php echo $regiao['nivel']; ?>">
-                    
-                    <div class="region-icon">📍</div>
-                    <div class="region-name"><?php echo htmlspecialchars($regiao['nome']); ?></div>
-                    <div class="region-level">Nv. <?php echo $regiao['nivel']; ?></div>
-                    
-                    <?php if ($regiao['status'] == 'descoberta'): ?>
-                    <div class="region-portals">
-                        <?php foreach ($regiao['portais'] as $portal): ?>
-                            <span class="portal-marker">🌀</span>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
-                </div>
-                <?php endforeach; ?>
-                
-                <!-- PLAYER POSITION -->
-                <div class="player-position" style="left: 150px; top: 100px;">
-                    <div class="player-marker">⚡</div>
-                    <div class="player-name"><?php echo htmlspecialchars($player_data['nome'] ?? 'Jogador'); ?></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- PORTAIS FIXOS (SEU SISTEMA ORIGINAL) -->
-    <div class="section section-vital">
-        <h2 class="section-header vital">🌌 PORTAL DIMENSIONAIS</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 20px;">
-            Escolha qual portal você deseja explorar. Cuidado com as dimensões instáveis.
-        </p>
-
-        <?php
-        // SEU CÓDIGO ORIGINAL DE PORTAIS AQUI
-        $portais = [
-            'E' => [
-                'nome' => 'Campo dos Slimes',
-                'tipo' => 'Floresta',
-                'nivel_minimo' => 1,
-                'descricao' => 'Monstros fracos, loot comum. Ideal para iniciantes.',
-                'ouro_base' => 50,
-                'xp_base' => 25,
-                'chance_item' => 30,
-                'dificuldade' => 'facil',
-                'dificuldade_label' => '⭐ Fácil',
-                'dificuldade_cor' => '#50C878'
-            ],
-            // ... outros portais
-        ];
-        ?>
-        
-        <div class="portals-grid">
-            <?php foreach ($portais as $rank => $portal): 
-                $nivel_jogador = (int)($player_data['level'] ?? 1);
-                $disponivel = $nivel_jogador >= $portal['nivel_minimo'];
-                $status_class = $disponivel ? 'disponivel' : 'bloqueado';
-            ?>
-            <div class="portal-card <?php echo $portal['dificuldade']; ?> <?php echo $status_class; ?>">
-                <!-- SEU CÓDIGO ORIGINAL DE CARDS DE PORTAL -->
-                <div class="portal-header" style="border-left-color: <?php echo $portal['dificuldade_cor']; ?>">
-                    <div class="portal-icon">
-                        <?php 
-                        $icons = [
-                            'Floresta' => '🌲', 'Acampamento' => '🏕️', 'Ruínas' => '🏛️',
-                            'Caverna' => '🕳️', 'Abismo' => '🌑', 'Cidade' => '🏙️'
-                        ];
-                        echo $icons[$portal['tipo']] ?? '🌀';
-                        ?>
-                    </div>
-                    <div class="portal-title">
-                        <h3>Rank <?php echo $rank; ?>: <?php echo htmlspecialchars($portal['nome']); ?></h3>
-                        <span class="portal-type"><?php echo $portal['tipo']; ?></span>
-                    </div>
-                    <div class="portal-level" style="background: <?php echo $portal['dificuldade_cor']; ?>">
-                        Nv. <?php echo $portal['nivel_minimo']; ?>+
-                    </div>
-                </div>
-                
-                <div class="portal-content">
-                    <div class="portal-description">
-                        <?php echo htmlspecialchars($portal['descricao']); ?>
-                    </div>
-                    
-                    <div class="portal-rewards">
-                        <div class="reward-item">
-                            <span class="reward-icon">💰</span>
-                            <span class="reward-text">Ouro: <?php echo number_format($portal['ouro_base']); ?>+</span>
+                    <?php
+                        // Extrair coordenadas de forma segura
+                        $coords_str = $regiao['coordenadas'] ?? 'x: 100, y: 100';
+                        $coords_parts = explode(', ', $coords_str); 
+                        $left_val = '100'; 
+                        $top_val = '100';
+                        
+                        if (count($coords_parts) === 2) {
+                            $left_part = explode(': ', $coords_parts[0]); 
+                            $top_part = explode(': ', $coords_parts[1]);
+                            if (count($left_part) === 2) $left_val = trim($left_part[1]);
+                            if (count($top_part) === 2) $top_val = trim($top_part[1]);
+                        }
+                        $left_css = $left_val . 'px'; 
+                        $top_css = $top_val . 'px';
+                    ?>
+                    <div class="map-region <?php echo $regiao['status']; ?>"
+                         style="border-color: <?php echo $regiao['cor']; ?>; left: <?php echo $left_css; ?>; top: <?php echo $top_css; ?>;"
+                         data-region="<?php echo $id; ?>">
+                        
+                        <div class="region-header">
+                            <span class="region-icon">📍</span>
+                            <span class="region-name"><?php echo htmlspecialchars($regiao['nome']); ?></span>
+                            <span class="region-level">(Nv. <?php echo $regiao['nivel']; ?>)</span>
                         </div>
-                        <div class="reward-item">
-                            <span class="reward-icon">🎒</span>
-                            <span class="reward-text">Itens: <?php echo $portal['chance_item']; ?>%</span>
-                        </div>
-                        <div class="reward-item">
-                            <span class="reward-icon">⚡</span>
-                            <span class="reward-text">XP: <?php echo number_format($portal['xp_base']); ?></span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="portal-footer">
-                    <div class="portal-difficulty" style="color: <?php echo $portal['dificuldade_cor']; ?>">
-                        <?php echo $portal['dificuldade_label']; ?>
-                    </div>
-                    
-                    <div class="portal-actions">
-                        <?php if ($disponivel): ?>
-                            <a href="combate_portal.php?rank=<?php echo $rank; ?>" class="btn btn-primary">
-                                🚀 Explorar Portal
-                            </a>
-                        <?php else: ?>
-                            <span class="btn btn-disabled" title="Nível necessário: <?php echo $portal['nivel_minimo']; ?>">
-                                🔒 Nível <?php echo $portal['nivel_minimo']; ?>+
-                            </span>
+                        
+                        <?php if ($regiao['status'] == 'descoberta'): ?>
+                            <div class="region-portals-list">
+                                <?php foreach ($regiao['portais'] as $rank): // Loop pelos Ranks (E, D, C...) ?>
+                                    <?php if (isset($portais[$rank])): // Verifica se o portal existe
+                                        $portal = $portais[$rank];
+                                        $disponivel = $player_data['level'] >= $portal['nivel_minimo'];
+                                    ?>
+                                        <div class="portal-link-item <?php echo $disponivel ? 'unlocked' : 'locked'; ?>">
+                                            <span class="portal-difficulty" style="color: <?php echo $portal['dificuldade_cor']; ?>">
+                                                <?php echo $portal['dificuldade']; ?>
+                                            </span>
+                                            <span class="portal-name"><?php echo $portal['nome']; ?> (Rank <?php echo $rank; ?>)</span>
+                                            
+                                            <?php if ($disponivel): ?>
+                                                <a href="combate_portal.php?rank=<?php echo $rank; ?>" class="btn-enter-portal">ENTRAR</a>
+                                            <?php else: ?>
+                                                <span class="btn-enter-locked" title="Requer Nível <?php echo $portal['nivel_minimo']; ?>">Nv. <?php echo $portal['nivel_minimo']; ?>+</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: // Região Oculta ?>
+                            <div class="region-locked-overlay">
+                                <span class="lock-icon">🔒</span>
+                                <span class="lock-text">Requer Nível <?php echo explode('-', $regiao['nivel'])[0]; ?>+</span>
+                            </div>
                         <?php endif; ?>
                     </div>
-                </div>
-                
-                <?php if (!$disponivel): ?>
-                <div class="portal-lock-overlay">
-                    <div class="lock-icon">🔒</div>
-                    <div class="lock-text">Nível <?php echo $portal['nivel_minimo']; ?>+ necessário</div>
-                </div>
-                <?php endif; ?>
+                <?php endforeach; ?>
             </div>
-            <?php endforeach; ?>
         </div>
     </div>
+
+    <!-- PORTAIS FIXOS (SEÇÃO REMOVIDA - AGORA INTEGRADA NO MAPA) -->
 </div>
 
 <style>
-/* MAPA INTERATIVO */
+/* MAPA INTERATIVO ATUALIZADO */
 .world-map-container {
     background: var(--bg-primary);
     border: 2px solid var(--accent-arcane);
@@ -353,55 +266,109 @@ include 'header.php';
     border: 2px solid;
     border-radius: 10px;
     background: var(--bg-primary);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     transition: all 0.3s ease;
-    min-width: 120px;
-    text-align: center;
+    min-width: 280px; /* Aumentado */
+    z-index: 5;
 }
 
 .map-region.descoberta {
-    cursor: pointer;
     opacity: 1;
+    z-index: 10;
+    cursor: default;
 }
 
 .map-region.descoberta:hover {
-    transform: scale(1.05);
-    box-shadow: 0 8px 25px rgba(138, 43, 226, 0.3);
+    transform: scale(1.03);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
 }
 
 .map-region.oculta {
     opacity: 0.3;
     filter: blur(2px);
     cursor: not-allowed;
+    z-index: 1;
 }
 
-.region-icon {
-    font-size: 1.5em;
-    margin-bottom: 5px;
-}
-
-.region-name {
-    font-weight: bold;
-    color: var(--text-primary);
-    margin-bottom: 5px;
-}
-
-.region-level {
-    color: var(--text-secondary);
-    font-size: 0.8em;
-    margin-bottom: 8px;
-}
-
-.region-portals {
+.region-header {
     display: flex;
-    justify-content: center;
-    gap: 5px;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+.region-icon { font-size: 1.2em; }
+.region-name { font-weight: bold; color: var(--text-primary); flex: 1; }
+.region-level { color: var(--text-secondary); font-size: 0.8em; }
+
+.region-portals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
-.portal-marker {
-    font-size: 1.2em;
-    animation: pulse 2s infinite;
+.portal-link-item {
+    display: grid;
+    grid-template-columns: 90px 1fr 80px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
 }
+
+.portal-link-item.locked {
+    opacity: 0.6;
+}
+
+.portal-difficulty {
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.portal-name {
+    font-size: 0.9em;
+    color: var(--text-primary);
+}
+
+.btn-enter-portal {
+    background: var(--accent-vital);
+    color: var(--bg-primary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 0.8em;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+.btn-enter-portal:hover {
+    background: var(--accent-arcane);
+    color: white;
+    transform: scale(1.05);
+}
+
+.btn-enter-locked {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.8em;
+    text-align: center;
+    cursor: not-allowed;
+}
+
+.region-locked-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.lock-icon { font-size: 2em; }
+.lock-text { color: var(--text-secondary); margin-top: 5px; }
 
 .player-position {
     position: absolute;
@@ -421,7 +388,23 @@ include 'header.php';
     font-size: 0.8em;
 }
 
-/* DUNGEONS DINÂMICAS */
+/* FEEDBACK MESSAGES */
+.feedback {
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+    text-align: center;
+    font-weight: bold;
+    border: 2px solid;
+}
+
+.feedback-error {
+    background: rgba(239, 71, 111, 0.1);
+    border-color: var(--status-hp);
+    color: var(--status-hp);
+}
+
+/* DUNGEONS DINÂMICAS (MANTIDO PARA COMPATIBILIDADE) */
 .dynamic-dungeons-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
@@ -572,18 +555,20 @@ include 'header.php';
 </style>
 
 <script>
-// SISTEMA DE MAPA INTERATIVO
+// SISTEMA DE MAPA INTERATIVO ATUALIZADO
 document.addEventListener('DOMContentLoaded', function() {
-    // REGIÕES CLICÁVEIS
+    // REGIÕES CLICÁVEIS (AGORA APENAS PARA FEEDBACK VISUAL)
     document.querySelectorAll('.map-region.descoberta').forEach(region => {
         region.addEventListener('click', function() {
-            const regionId = this.dataset.region;
-            alert(`Explorando região: ${this.dataset.tooltip}`);
-            // Aqui você pode implementar navegação para a região
+            // Feedback visual apenas - a navegação agora é pelos botões específicos
+            this.style.transform = 'scale(1.02)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 200);
         });
     });
     
-    // TEMPORIZADOR DAS DUNGEONS
+    // TEMPORIZADOR DAS DUNGEONS (MANTIDO PARA COMPATIBILIDADE)
     document.querySelectorAll('.timer').forEach(timer => {
         const endTime = parseInt(timer.dataset.end);
         
@@ -606,7 +591,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setInterval(updateTimer, 1000);
     });
     
-    // ENTRAR NA DUNGEON
+    // ENTRAR NA DUNGEON (MANTIDO PARA COMPATIBILIDADE)
     document.querySelectorAll('.btn-enter-dungeon').forEach(btn => {
         btn.addEventListener('click', function() {
             const dungeonData = JSON.parse(this.dataset.dungeon);
@@ -618,3 +603,5 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<?php include 'footer.php'; ?>

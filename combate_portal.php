@@ -14,8 +14,6 @@ include_once 'conditional_skills_functions.php';
 include_once 'ultimate_abilities_functions.php'; 
 include_once 'dungeon_system.php';
 
-
-
 // =============================================================================
 // VERIFICAÇÃO DE LOGIN E CARREGAMENTO INICIAL
 // =============================================================================
@@ -38,7 +36,8 @@ if (!$player_data_base) {
     header('Location: login.php');
     exit;
 }
-// ✅ VERIFICAR DESBLOQUEIO DE ULTIMATES (adicionar após includes)
+
+// ✅ VERIFICAR DESBLOQUEIO DE ULTIMATES
 function verificar_desbloqueio_ultimates_automatico($player_id, $conexao) {
     $sql_ultimates = "SELECT id FROM ultimate_abilities_base";
     $ultimates = $conexao->query($sql_ultimates);
@@ -54,7 +53,7 @@ function verificar_desbloqueio_ultimates_automatico($player_id, $conexao) {
     return $desbloqueadas;
 }
 
-// VERIFICAR SE VEIO DE DUNGEON DINÂMICA
+// ✅ VERIFICAR SE VEIO DE DUNGEON DINÂMICA
 if (isset($_GET['dungeon_data'])) {
     $dungeon_data_encoded = $_GET['dungeon_data'];
     $dungeon_data = json_decode(base64_decode($dungeon_data_encoded), true);
@@ -111,9 +110,36 @@ function aplicar_modificadores_dungeon($monstro, $modificadores) {
     
     return $monstro;
 }
+
+// ✅ CHAMAR NO INÍCIO DO COMBATE
+verificar_desbloqueio_ultimates_automatico($player_id, $conexao);
+
+// =============================================================================
+// CONFIGURAÇÃO DO COMBATE E ID DE COMBATE
+// =============================================================================
+
+$mensagem_combate = "";
+$rank_escolhido = isset($_GET['rank']) ? strtoupper($_GET['rank']) : 'E';
+$ranks_validos = ['E', 'D', 'C'];
+
+if (!in_array($rank_escolhido, $ranks_validos)) {
+    $rank_escolhido = 'E';
+}
+
+// Limpa sessão antiga se necessário
+if (isset($_SESSION['combate_ativo']) && (!isset($_GET['acao']) || (isset($_SESSION['combate_rank']) && $_SESSION['combate_rank'] != $rank_escolhido))) {
+    // Limpa status antigos deste combate_id antes de limpar a sessão
+    if (isset($_SESSION['combate_id'])) {
+        $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($_SESSION['combate_id']) . "'");
+    }
+    unset($_SESSION['combate_ativo']);
+    unset($_SESSION['combate_rank']);
+    unset($_SESSION['combate_id']);
+}
+
 // Inicializar combate_id se não existir
 if (!isset($_SESSION['combate_id'])) {
-    $_SESSION['combate_id'] = uniqid(); // ID único para o combate
+    $_SESSION['combate_id'] = "cbt_" . $player_id . "_" . uniqid(); // ID único para o combate
 }
 $combate_id = $_SESSION['combate_id'];
 
@@ -135,29 +161,8 @@ $player_stats_total = [
 $recurso_nome = (in_array($player_data_base['classe_base'], ['Mago', 'Sacerdote'])) ? 'Mana' : 'Fúria';
 
 // =============================================================================
-// CONFIGURAÇÃO DO COMBATE
-// =============================================================================
-
-$mensagem_combate = "";
-$rank_escolhido = isset($_GET['rank']) ? strtoupper($_GET['rank']) : 'E';
-$ranks_validos = ['E', 'D', 'C'];
-
-if (!in_array($rank_escolhido, $ranks_validos)) {
-    $rank_escolhido = 'E';
-}
-
-// Limpa sessão antiga se necessário
-if (isset($_SESSION['combate_ativo']) && (!isset($_GET['acao']) || (isset($_SESSION['combate_rank']) && $_SESSION['combate_rank'] != $rank_escolhido))) {
-    unset($_SESSION['combate_ativo']);
-    unset($_SESSION['combate_rank']);
-}
-
-// =============================================================================
 // INICIALIZAÇÃO DO COMBATE
 // =============================================================================
-
-// ✅ CHAMAR NO INÍCIO DO COMBATE (procure onde inicia o combate e adicione)
-verificar_desbloqueio_ultimates_automatico($player_id, $conexao);
 
 if (!isset($_SESSION['combate_ativo'])) {
     $monstro_dados = gerar_monstro($rank_escolhido, $conexao);
@@ -197,56 +202,103 @@ if (!isset($_SESSION['combate_ativo'])) {
     $_SESSION['combate_rank'] = $rank_escolhido;
     
     $mensagem_combate .= "<div class='log-entry'><span class='log-system'>⚔️ Iniciando combate contra <strong>{$monstro_dados['nome']}</strong> (Rank {$rank_escolhido})!</span></div>";
+    
+    // Limpa status antigos deste combate_id (segurança extra)
+    $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($combate_id) . "'");
 }
+
+// =============================================================================
+// CARREGAMENTO DE DADOS DA SESSÃO E ID DO MONSTRO
+// =============================================================================
+
+$combate = &$_SESSION['combate_ativo'];
+if (!isset($combate['monstro']) || !is_array($combate['monstro'])) {
+    die("Erro: Dados do monstro inválidos na sessão.");
+}
+$monstro = &$combate['monstro'];
+$skills_combate = (isset($combate['skills_aprendidas']) && is_array($combate['skills_aprendidas'])) ? $combate['skills_aprendidas'] : [];
+
+// Gera ID único para o monstro DESTA instância de combate
+$monstro_id_no_combate = $combate_id . "_monstro_" . ($monstro['id_base'] ?? 0);
 
 // =============================================================================
 // FUNÇÃO DE PROCESSAR TURNO COM STATUS EFFECTS
 // =============================================================================
 
-function processar_turno_combate($combate_id, $player_id, $conexao) {
+function processar_turno_combate($combate_id, $conexao) {
     $mensagens = [];
     
-    // ✅ 1. PRIMEIRO: Processar status effects do turno
+    // Processar status effects do turno
     $efeitos_status = processar_status_effects_turno($combate_id, $conexao);
     foreach ($efeitos_status as $efeito) {
-        $mensagens[] = $efeito['mensagem'];
-        
-        // Se o alvo perdeu turno por status, termina aqui
-        if (isset($efeito['perde_turno']) && $efeito['perde_turno'] && 
-            $efeito['alvo_id'] == $player_id && $efeito['alvo_tipo'] == 'player') {
-            $mensagens[] = "🎯 Você perdeu o turno devido a {$efeito['status_nome']}!";
-            return ['mensagens' => $mensagens, 'perdeu_turno' => true];
+        $mensagens[] = $efeito;
+    }
+    
+    return $mensagens;
+}
+
+// =============================================================================
+// FUNÇÃO REDUZIR COOLDOWNS
+// =============================================================================
+
+function reduzir_cooldowns_skill(&$skills_combate) {
+    $mensagem_cooldown = "";
+    $cooldowns_reduzidos = [];
+    
+    foreach ($skills_combate as &$skill) {
+        if (isset($skill['cooldown_restante']) && $skill['cooldown_restante'] > 0) {
+            $skill['cooldown_restante']--;
+            if ($skill['cooldown_restante'] == 0) {
+                $cooldowns_reduzidos[] = $skill['nome'] ?? "Habilidade";
+            }
         }
     }
     
-    return ['mensagens' => $mensagens, 'perdeu_turno' => false];
+    if (!empty($cooldowns_reduzidos)) {
+        $mensagem_cooldown = "<span class='log-system'>🔄 Habilidades prontas: " . implode(", ", $cooldowns_reduzidos) . "</span>";
+    }
+    
+    return $mensagem_cooldown;
+}
+
+// =============================================================================
+// PROCESSAR STATUS EFFECTS ANTES DAS AÇÕES
+// =============================================================================
+
+$resultado_status = processar_turno_combate($combate_id, $conexao);
+$jogador_perdeu_turno = false;
+$monstro_perdeu_turno = false;
+
+foreach ($resultado_status as $efeito) {
+    // Adiciona classe CSS baseada no tipo de mensagem
+    $status_class = 'log-status';
+    if (isset($efeito['tipo'])) {
+        if ($efeito['tipo'] == 'dano') $status_class = 'log-status status-damage';
+        if ($efeito['tipo'] == 'remocao') $status_class = 'log-status status-neutral';
+        if ($efeito['tipo'] == 'controle') $status_class = 'log-status status-control';
+    }
+
+    $mensagem_combate .= "<div class='log-entry'><span class='$status_class'>{$efeito['mensagem']}</span></div>";
+
+    // Verifica se o JOGADOR perdeu o turno
+    if (isset($efeito['perde_turno']) && $efeito['perde_turno'] && isset($efeito['alvo_tipo']) && $efeito['alvo_tipo'] == 'player' && isset($efeito['alvo_id']) && $efeito['alvo_id'] == $player_id) {
+        $jogador_perdeu_turno = true;
+    }
+    // Verifica se o MONSTRO perdeu o turno
+    if (isset($efeito['perde_turno']) && $efeito['perde_turno'] && isset($efeito['alvo_tipo']) && $efeito['alvo_tipo'] == 'monstro' && isset($efeito['alvo_id']) && $efeito['alvo_id'] == $monstro_id_no_combate) {
+        $monstro_perdeu_turno = true;
+    }
 }
 
 // =============================================================================
 // LÓGICA DE AÇÕES DO JOGADOR
 // =============================================================================
 
-$combate = &$_SESSION['combate_ativo'];
-$monstro = &$combate['monstro'];
-$skills_combate = $combate['skills_aprendidas'] ?? [];
 $acao_jogador_realizada = false;
 
-// ✅ DEFINIR COMBATE_ID (usando session ou criar um)
-if (!isset($_SESSION['combate_id'])) {
-    $_SESSION['combate_id'] = "combate_" . $player_id . "_" . time();
-}
-$combate_id = $_SESSION['combate_id'];
-
-// ✅ PROCESSAR STATUS EFFECTS ANTES DAS AÇÕES
-$resultado_status = processar_turno_combate($combate_id, $player_id, $conexao);
-foreach ($resultado_status['mensagens'] as $msg_status) {
-    $mensagem_combate .= "<div class='log-entry'><span class='log-status'>$msg_status</span></div>";
-}
-
-// ✅ SE PERDEU TURNO POR STATUS, PULA AÇÕES
-if ($resultado_status['perdeu_turno']) {
-    $acao_jogador_realizada = true; // Marca como realizado mesmo sem ação
-} else {
+// ✅ Só executa se não perdeu turno
+if (!$jogador_perdeu_turno) {
+    
     // AÇÃO: ATAQUE BÁSICO
     if (isset($_GET['acao']) && $_GET['acao'] === 'atacar') {
         $acao_jogador_realizada = true;
@@ -280,19 +332,22 @@ if ($resultado_status['perdeu_turno']) {
             
             // ✅ CALCULAR DANO COM STATUS EFFECTS
             $dano_causado = calcular_dano_com_status($dano_real, $combate_id, $player_id, 'player', $conexao);
-            // NO ATAQUE BÁSICO, APÓS calcular dano, ADICIONE:
-$dano_combo = aplicar_bonus_combo($dano_causado, $player_id);
-if ($dano_combo > $dano_causado) {
-    $bonus = $dano_combo - $dano_causado;
-    $mensagem_combate .= "<span class='log-combo-bonus'> +{$bonus} de bônus de combo!</span>";
-    $dano_causado = $dano_combo;
-}
-// ✅ NO CÁLCULO DE DANO (ataque básico e habilidades), APÓS calcular dano com combo, ADICIONE:
-$buff_ultimate = get_buff_ultimate_ativo();
-if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
-    $dano_causado *= 2;
-    $mensagem_combate .= "<span class='log-ultimate-bonus'> ⚡ DANO DOBRADO pela Ultimate!</span>";
-}
+            
+            // ✅ APLICAR BÔNUS DE COMBO
+            $dano_combo = aplicar_bonus_combo($dano_causado, $player_id);
+            if ($dano_combo > $dano_causado) {
+                $bonus = $dano_combo - $dano_causado;
+                $mensagem_combate .= "<span class='log-combo-bonus'> +{$bonus} de bônus de combo!</span>";
+                $dano_causado = $dano_combo;
+            }
+            
+            // ✅ APLICAR BÔNUS DE ULTIMATE
+            $buff_ultimate = get_buff_ultimate_ativo();
+            if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
+                $dano_causado *= 2;
+                $mensagem_combate .= "<span class='log-ultimate-bonus'> ⚡ DANO DOBRADO pela Ultimate!</span>";
+            }
+            
             $monstro['hp_atual'] -= $dano_causado;
             
             $mensagem_combate .= "<span class='log-damage'> Causa <strong>{$dano_causado} de dano</strong>!</span>";
@@ -302,67 +357,70 @@ if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
         
         $mensagem_combate .= "</div>";
     }
-// ✅ AÇÃO: USAR ULTIMATE ABILITY (adicionar junto com as outras ações)
-else if (isset($_GET['acao']) && $_GET['acao'] === 'usar_ultimate' && isset($_GET['ultimate_id'])) {
-    $ultimate_id = (int)$_GET['ultimate_id'];
     
-    $resultado_ultimate = usar_ultimate_ability($player_id, $ultimate_id, $combate, $conexao);
-    
-    if ($resultado_ultimate['sucesso']) {
-        $acao_jogador_realizada = true;
-        $mensagem_combate .= "<div class='log-ultimate'>" . $resultado_ultimate['mensagem'] . "</div>";
+    // ✅ AÇÃO: USAR ULTIMATE ABILITY
+    else if (isset($_GET['acao']) && $_GET['acao'] === 'usar_ultimate' && isset($_GET['ultimate_id'])) {
+        $ultimate_id = (int)$_GET['ultimate_id'];
         
-        // ✅ APLICAR BÔNUS DE ULTIMATE NO DANO
-        $buff_ultimate = get_buff_ultimate_ativo();
-        if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
-            $_SESSION['ultimate_dano_dobrado'] = true;
+        $resultado_ultimate = usar_ultimate_ability($player_id, $ultimate_id, $combate, $conexao);
+        
+        if ($resultado_ultimate['sucesso']) {
+            $acao_jogador_realizada = true;
+            $mensagem_combate .= "<div class='log-ultimate'>" . $resultado_ultimate['mensagem'] . "</div>";
+            
+            // ✅ APLICAR BÔNUS DE ULTIMATE NO DANO
+            $buff_ultimate = get_buff_ultimate_ativo();
+            if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
+                $_SESSION['ultimate_dano_dobrado'] = true;
+            }
+        } else {
+            $mensagem_combate .= "<div class='log-entry'><span class='log-error'>{$resultado_ultimate['mensagem']}</span></div>";
         }
-    } else {
-        $mensagem_combate .= "<div class='log-entry'><span class='log-error'>{$resultado_ultimate['mensagem']}</span></div>";
     }
-}
+    
     // AÇÃO: USAR HABILIDADE
     else if (isset($_GET['acao']) && $_GET['acao'] === 'usar_skill' && isset($_GET['skill_id'])) {
-    $id_skill_usada = (int)$_GET['skill_id'];
-    
-    if (isset($skills_combate[$id_skill_usada])) {
-        $skill_usada = &$skills_combate[$id_skill_usada];
-        $custo_mana = $skill_usada['custo_mana'] ?? 0;
-        $cooldown_restante = $skill_usada['cooldown_restante'] ?? 0;
-        $cooldown_turnos = $skill_usada['cooldown_turnos'] ?? 0;
-
-        // ✅ VERIFICAR CONDIÇÕES DA HABILIDADE
-        $condicoes = verificar_condicoes_habilidade($player_id, $skill_usada['id_skill_base'], $combate, $conexao);
+        $id_skill_usada = (int)$_GET['skill_id'];
         
-        if (!$condicoes['pode_usar']) {
-            $mensagem_combate .= "<div class='log-entry'><span class='log-error'>{$condicoes['mensagem']}</span></div>";
-        }
-        else if ($cooldown_restante > 0) {
-            $mensagem_combate .= "<div class='log-entry'><span class='log-error'>Habilidade em recarga!</span></div>";
-        }
-        else if ($combate['jogador_mana_atual'] < $custo_mana) {
-            $mensagem_combate .= "<div class='log-entry'><span class='log-error'>Mana insuficiente!</span></div>";
-        }
-        else {
-            $acao_jogador_realizada = true;
-            $combate['jogador_mana_atual'] -= $custo_mana;
-            $skill_usada['cooldown_restante'] = $cooldown_turnos;
-            
-            // ✅ APLICAR CUSTO ALTERNATIVO (se houver)
-            $custo_alternativo = aplicar_custo_alternativo($player_id, $skill_usada['id_skill_base'], $combate, $conexao);
-            if ($custo_alternativo) {
-                $mensagem_combate .= "<div class='log-entry'><span class='log-alternative'>{$custo_alternativo['mensagem']}</span></div>";
-            }
-            
-            $dado_escalada_bonus = ($combate['turno_atual'] > 1) ? min(3, $combate['turno_atual'] - 1) : 0;
-            $combate['dado_escalada'] = $dado_escalada_bonus;
+        if (isset($skills_combate[$id_skill_usada])) {
+            $skill_usada = &$skills_combate[$id_skill_usada];
+            $custo_mana = $skill_usada['custo_mana'] ?? 0;
+            $cooldown_restante = $skill_usada['cooldown_restante'] ?? 0;
+            $cooldown_turnos = $skill_usada['cooldown_turnos'] ?? 0;
 
-            $skill_nome = $skill_usada['nome'] ?? "Habilidade #{$id_skill_usada}";
-            $skill_level = $skill_usada['skill_level'] ?? 1;
+            // ✅ VERIFICAR CONDIÇÕES DA HABILIDADE
+            $condicoes = verificar_condicoes_habilidade($player_id, $skill_usada['id_skill_base'], $combate, $conexao);
             
-            $mensagem_combate .= "<div class='log-entry'>";
-            $mensagem_combate .= "<span class='log-turn'>✨ TURNO {$combate['turno_atual']} (Escalada: +{$dado_escalada_bonus})</span>";
-            $mensagem_combate .= "<span class='log-skill'>{$player_stats_total['nome']} usa <strong>{$skill_nome} Nv.{$skill_level}</strong>!</span>";
+            if (!$condicoes['pode_usar']) {
+                $mensagem_combate .= "<div class='log-entry'><span class='log-error'>{$condicoes['mensagem']}</span></div>";
+            }
+            else if ($cooldown_restante > 0) {
+                $mensagem_combate .= "<div class='log-entry'><span class='log-error'>Habilidade em recarga!</span></div>";
+            }
+            else if ($combate['jogador_mana_atual'] < $custo_mana) {
+                $mensagem_combate .= "<div class='log-entry'><span class='log-error'>Mana insuficiente!</span></div>";
+            }
+            else {
+                $acao_jogador_realizada = true;
+                $combate['jogador_mana_atual'] -= $custo_mana;
+                $skill_usada['cooldown_restante'] = $cooldown_turnos;
+                
+                // ✅ APLICAR CUSTO ALTERNATIVO (se houver)
+                $custo_alternativo = aplicar_custo_alternativo($player_id, $skill_usada['id_skill_base'], $combate, $conexao);
+                if ($custo_alternativo) {
+                    $mensagem_combate .= "<div class='log-entry'><span class='log-alternative'>{$custo_alternativo['mensagem']}</span></div>";
+                }
+                
+                $dado_escalada_bonus = ($combate['turno_atual'] > 1) ? min(3, $combate['turno_atual'] - 1) : 0;
+                $combate['dado_escalada'] = $dado_escalada_bonus;
+
+                $skill_nome = $skill_usada['nome'] ?? "Habilidade #{$id_skill_usada}";
+                $skill_level = $skill_usada['skill_level'] ?? 1;
+                
+                $mensagem_combate .= "<div class='log-entry'>";
+                $mensagem_combate .= "<span class='log-turn'>✨ TURNO {$combate['turno_atual']} (Escalada: +{$dado_escalada_bonus})</span>";
+                $mensagem_combate .= "<span class='log-skill'>{$player_stats_total['nome']} usa <strong>{$skill_nome} Nv.{$skill_level}</strong>!</span>";
+                
                 // Cálculo de dano da skill
                 $nivel_skill = $skill_level;
                 $dano_base = $skill_usada['dano_base'] ?? 0;
@@ -381,34 +439,33 @@ else if (isset($_GET['acao']) && $_GET['acao'] === 'usar_ultimate' && isset($_GE
                 
                 // ✅ CALCULAR DANO COM STATUS EFFECTS
                 $dano_causado = calcular_dano_com_status($dano_real, $combate_id, $player_id, 'player', $conexao);
-                // NA AÇÃO DE USAR HABILIDADE, APÓS calcular o dano, ADICIONE:
+                
+                // ✅ VERIFICAR E ATIVAR COMBOS
+                $resultado_combo = verificar_combo($player_id, $skill_nome, $combate['turno_atual'], $conexao);
+                if ($resultado_combo['mensagem']) {
+                    $mensagem_combate .= "<div class='log-combo'>" . $resultado_combo['mensagem'] . "</div>";
+                }
 
-// ✅ VERIFICAR E ATIVAR COMBOS
-$resultado_combo = verificar_combo($player_id, $skill_nome, $combate['turno_atual'], $conexao);
-if ($resultado_combo['mensagem']) {
-    $mensagem_combate .= "<div class='log-combo'>" . $resultado_combo['mensagem'] . "</div>";
-}
+                // ✅ APLICAR BÔNUS DE COMBO NO DANO
+                $dano_combo = aplicar_bonus_combo($dano_causado, $player_id);
+                if ($dano_combo > $dano_causado) {
+                    $bonus = $dano_combo - $dano_causado;
+                    $mensagem_combate .= "<span class='log-combo-bonus'> +{$bonus} de bônus de combo!</span>";
+                    $dano_causado = $dano_combo;
+                }
 
-// ✅ APLICAR BÔNUS DE COMBO NO DANO
-$dano_combo = aplicar_bonus_combo($dano_causado, $player_id);
-if ($dano_combo > $dano_causado) {
-    $bonus = $dano_combo - $dano_causado;
-    $mensagem_combate .= "<span class='log-combo-bonus'> +{$bonus} de bônus de combo!</span>";
-    $dano_causado = $dano_combo;
-}
-
-// ✅ APLICAR BÔNUS DE CRÍTICO DE COMBO
-$bonus_critico = get_bonus_critico_combo();
-if ($bonus_critico > 0) {
-    // Aumenta chance de crítico (integre com seu sistema de crítico)
-    $mensagem_combate .= "<span class='log-combo-bonus'> +{$bonus_critico}% crítico de combo!</span>";
-}
-// ✅ NO CÁLCULO DE DANO (ataque básico e habilidades), APÓS calcular dano com combo, ADICIONE:
-$buff_ultimate = get_buff_ultimate_ativo();
-if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
-    $dano_causado *= 2;
-    $mensagem_combate .= "<span class='log-ultimate-bonus'> ⚡ DANO DOBRADO pela Ultimate!</span>";
-}
+                // ✅ APLICAR BÔNUS DE CRÍTICO DE COMBO
+                $bonus_critico = get_bonus_critico_combo();
+                if ($bonus_critico > 0) {
+                    $mensagem_combate .= "<span class='log-combo-bonus'> +{$bonus_critico}% crítico de combo!</span>";
+                }
+                
+                // ✅ APLICAR BÔNUS DE ULTIMATE
+                $buff_ultimate = get_buff_ultimate_ativo();
+                if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
+                    $dano_causado *= 2;
+                    $mensagem_combate .= "<span class='log-ultimate-bonus'> ⚡ DANO DOBRADO pela Ultimate!</span>";
+                }
 
                 $monstro['hp_atual'] -= $dano_causado;
                 
@@ -417,13 +474,13 @@ if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
                     $chance_aplicar = 70; // 70% de chance base
                     
                     if (rand(1, 100) <= $chance_aplicar) {
-                        // Para monstro, precisamos do ID do monstro - ajuste conforme seu sistema
-                        $monstro_id = $monstro['id'] ?? 1; // ID temporário
-                        $status_aplicado = aplicar_status_effect($combate_id, $monstro_id, 'monstro', $skill_usada['aplica_status'], $conexao);
+                        $status_aplicado = aplicar_status_effect($combate_id, $monstro_id_no_combate, 'monstro', $skill_usada['aplica_status'], $conexao);
                         
                         if ($status_aplicado) {
-                            $mensagem_combate .= "<span class='log-status'> 🎯 {$status_aplicado['icone']} {$status_aplicado['nome']} aplicado!</span>";
+                            $mensagem_combate .= "<span class='log-status status-applied'> 🎯 {$status_aplicado['icone']} {$status_aplicado['nome']} aplicado!</span>";
                         }
+                    } else {
+                        $mensagem_combate .= "<span class='log-status status-resisted'> (Resistiu ao Status)</span>";
                     }
                 }
                 
@@ -432,80 +489,94 @@ if ($buff_ultimate && $buff_ultimate['dano_dobrado']) {
             }
         }
     }
-    // ✅ NO FINAL DO PROCESSAMENTO DO TURNO (procure onde termina o turno), ADICIONE:
-// Processar cooldown de ultimates
-processar_cooldown_ultimates($player_id, $conexao);
+    
+    // ✅ NO FINAL DO PROCESSAMENTO DO TURNO, Processar cooldown de ultimates
+    processar_cooldown_ultimates($player_id, $conexao);
+    
+} else {
+    // Se jogador perdeu turno, marca ação como realizada para pular pro monstro
+    $acao_jogador_realizada = true;
+    $mensagem_combate .= "<div class='log-entry'><span class='log-status status-control'>Você está Atordoado/Impedido e perdeu o turno!</span></div>";
 }
 
 // =============================================================================
 // TURNO DO MONSTRO
 // =============================================================================
 
-if ($acao_jogador_realizada && isset($monstro['hp_atual']) && $monstro['hp_atual'] > 0) {
+if ($acao_jogador_realizada && isset($_SESSION['combate_ativo']) && isset($monstro['hp_atual']) && $monstro['hp_atual'] > 0) {
     
-    $mensagem_combate .= "<div class='log-entry'>";
-    $mensagem_combate .= "<span class='log-enemy'>{$monstro['nome']} ataca...</span>";
-    
-    // Teste de acerto do monstro
-    $monstro_dex = $monstro['dex'] ?? 10;
-    $monstro_str = $monstro['str'] ?? 5;
-    $monstro_dano_min = max(1, $monstro['dano_min'] ?? 1);
-    $monstro_dano_max = max($monstro_dano_min, $monstro['dano_max'] ?? 5);
-    
-    $mod_acerto_monstro = $monstro_dex + $combate['dado_escalada'];
-    $dc_jogador = 30 + $player_stats_total['dex'];
-    $teste_monstro = teste_atributo($mod_acerto_monstro, $dc_jogador);
-    
-    if (in_array($teste_monstro['resultado'], ['sucesso', 'critico'])) {
-        // Teste de evasão do jogador
-        $roll_evasao = roll_d100();
-        $chance_evadir = $player_stats_total['dex'];
+    // ✅ Pula o turno do monstro se ele perdeu por status
+    if (!$monstro_perdeu_turno) {
+        $mensagem_combate .= "<div class='log-entry'>";
+        $mensagem_combate .= "<span class='log-enemy'>{$monstro['nome']} ataca...</span>";
         
-        if ($roll_evasao <= $chance_evadir) {
-            $mensagem_combate .= "<span class='log-dodge'> Você <strong>EVADIU</strong> o ataque! ({$roll_evasao} <= {$chance_evadir} DEX)</span>";
+        // Teste de acerto do monstro
+        $monstro_dex = $monstro['dex'] ?? 10;
+        $monstro_str = $monstro['str'] ?? 5;
+        $monstro_dano_min = max(1, $monstro['dano_min'] ?? 1);
+        $monstro_dano_max = max($monstro_dano_min, $monstro['dano_max'] ?? 5);
+        
+        $mod_acerto_monstro = $monstro_dex + $combate['dado_escalada'];
+        $dc_jogador = 30 + $player_stats_total['dex'];
+        $teste_monstro = teste_atributo($mod_acerto_monstro, $dc_jogador);
+        
+        if (in_array($teste_monstro['resultado'], ['sucesso', 'critico'])) {
+            // Teste de evasão do jogador
+            $roll_evasao = roll_d100();
+            $chance_evadir = $player_stats_total['dex'];
+            
+            if ($roll_evasao <= $chance_evadir) {
+                $mensagem_combate .= "<span class='log-dodge'> Você <strong>EVADIU</strong> o ataque! ({$roll_evasao} <= {$chance_evadir} DEX)</span>";
+            } else {
+                // Monstro acertou - calcula dano
+                $dano_monstro_rolado = mt_rand($monstro_dano_min, $monstro_dano_max);
+                $dano_monstro_bruto = $dano_monstro_rolado + ($monstro_str * 1.5);
+                
+                if ($teste_monstro['resultado'] === 'critico') {
+                    $dano_monstro_bruto *= 2;
+                }
+                
+                $dano_real_jogador = calcular_dano_mitigado($dano_monstro_bruto, $player_stats_total['con'], $equip_bonus['mitigacao_total']);
+                $combate['jogador_hp_atual'] -= $dano_real_jogador;
+                
+                $mensagem_combate .= "<span class='log-enemy-damage'> Causa <strong>{$dano_real_jogador} de dano</strong>! (Falhou evasão: {$roll_evasao} > {$chance_evadir})</span>";
+                
+                // Verifica derrota do jogador
+                if ($combate['jogador_hp_atual'] <= 0) {
+                    $ouro_atual = $player_data_base['ouro'];
+                    $ouro_perdido = floor($ouro_atual * 0.1);
+                    $ouro_restante = $ouro_atual - $ouro_perdido;
+                    
+                    $conexao->query("UPDATE personagens SET ouro = {$ouro_restante}, hp_atual = 1 WHERE id = {$player_id}");
+                    
+                    $_SESSION['flash_message'] = "
+                        <h3>Você foi <strong>DERROTADO</strong>!</h3>
+                        <p>Seu HP chegou a zero. Você perdeu {$ouro_perdido} Ouro ao ser resgatado.</p>
+                    ";
+                    
+                    // Limpa status do combate ao ser derrotado
+                    $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($combate_id) . "'");
+                    unset($_SESSION['combate_ativo']);
+                    unset($_SESSION['combate_rank']);
+                    unset($_SESSION['combate_id']);
+                    header("Location: mapa.php");
+                    exit;
+                }
+            }
         } else {
-            // Monstro acertou - calcula dano
-            $dano_monstro_rolado = mt_rand($monstro_dano_min, $monstro_dano_max);
-            $dano_monstro_bruto = $dano_monstro_rolado + ($monstro_str * 1.5);
-            
-            if ($teste_monstro['resultado'] === 'critico') {
-                $dano_monstro_bruto *= 2;
-            }
-            
-            $dano_real_jogador = calcular_dano_mitigado($dano_monstro_bruto, $player_stats_total['con'], $equip_bonus['mitigacao_total']);
-            $combate['jogador_hp_atual'] -= $dano_real_jogador;
-            
-            $mensagem_combate .= "<span class='log-enemy-damage'> Causa <strong>{$dano_real_jogador} de dano</strong>! (Falhou evasão: {$roll_evasao} > {$chance_evadir})</span>";
-            
-            // Verifica derrota do jogador
-            if ($combate['jogador_hp_atual'] <= 0) {
-                $ouro_atual = $player_data_base['ouro'];
-                $ouro_perdido = floor($ouro_atual * 0.1);
-                $ouro_restante = $ouro_atual - $ouro_perdido;
-                
-                $conexao->query("UPDATE personagens SET ouro = {$ouro_restante}, hp_atual = 1 WHERE id = {$player_id}");
-                
-                $_SESSION['flash_message'] = "
-                    <h3>Você foi <strong>DERROTADO</strong>!</h3>
-                    <p>Seu HP chegou a zero. Você perdeu {$ouro_perdido} Ouro ao ser resgatado.</p>
-                ";
-                
-                unset($_SESSION['combate_ativo']);
-                unset($_SESSION['combate_rank']);
-                header("Location: mapa.php");
-                exit;
-            }
+            $mensagem_combate .= "<span class='log-miss'> Monstro errou o ataque!</span>";
         }
+        
+        $mensagem_combate .= "</div>";
     } else {
-        $mensagem_combate .= "<span class='log-miss'> Monstro errou o ataque!</span>";
+        $mensagem_combate .= "<div class='log-entry'><span class='log-status status-control'>{$monstro['nome']} está Atordoado/Impedido e perdeu o turno!</span></div>";
     }
     
-    $mensagem_combate .= "</div>";
-    
-    // Reduz cooldowns das skills
-    foreach ($skills_combate as &$skill) {
-        if (isset($skill['cooldown_restante']) && $skill['cooldown_restante'] > 0) {
-            $skill['cooldown_restante']--;
+    // ✅ REDUZ COOLDOWNS DE SKILLS
+    if (isset($_SESSION['combate_ativo'])) {
+        $mensagem_cooldown = reduzir_cooldowns_skill($skills_combate);
+        if(!empty($mensagem_cooldown)) {
+            $mensagem_combate .= "<div class='log-entry'>{$mensagem_cooldown}</div>";
         }
     }
 }
@@ -529,10 +600,9 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
 
     // Atualizar missão de matar monstros
     atualizar_progresso_missao($player_id, 'matar_monstros', 1, $conexao);
-    // Após derrotar monstro, adicione:
     atualizar_progresso_achievement($player_id, 'monstros_derrotados', 1, $conexao);
 
-    //Verifica level up
+    // Verifica level up
     $player_data_atualizado = $conexao->query("SELECT * FROM personagens WHERE id = $player_id")->fetch_assoc();
     $mensagem_level_up = verificar_level_up($player_id, $player_data_atualizado, $conexao);
     $mensagem_combate .= $mensagem_level_up;
@@ -547,15 +617,21 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
             $loot_msg = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 2, mt_rand(1, 3)); // Fragmento de Slime
             $mensagem_combate .= "<div class='loot-item'>{$loot_msg}</div>";
         }
-    } else if ($monstro_id_base == 3) { // Esqueleto
-        if (mt_rand(1, 100) <= 40) {
-            $id_equip = (mt_rand(1, 2) == 1) ? 8 : 9; // Espada ou Armadura
-            $loot_msg = processar_auto_loot($player_id, $player_data_atualizado, $conexao, $id_equip, 1);
-            $mensagem_combate .= "<div class='loot-item rare'>{$loot_msg}</div>";
-        }
-        // Sempre dropa ossos
-        $loot_msg = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 10, mt_rand(2, 5));
-        $mensagem_combate .= "<div class='loot-item'>{$loot_msg}</div>";
+    // Bloco Corrigido (COM IDs CERTOS)
+} else if ($monstro_id_base == 3) { // Esqueleto Guerreiro (ID 3)
+    // Chance de dropar Espada (ID 7) OU Armadura (ID 8)
+    if (mt_rand(1, 100) <= 40) { // 40% chance de dropar equipamento
+         $id_equip_drop = (mt_rand(1, 2) == 1) ? 7 : 8; // <-- CORRIGIDO
+         $loot_msg_equip = processar_auto_loot($player_id, $player_data_atualizado, $conexao, $id_equip_drop, 1); 
+         $mensagem_combate .= "<p style='color: cyan;'>{$loot_msg_equip}</p>";
+    }
+    // Sempre dropa Fragmento Ósseo (ID 9)
+    $loot_msg_mat = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 9, mt_rand(2, 5)); // <-- CORRIGIDO
+    $mensagem_combate .= "<p>{$loot_msg_mat}</p>";
+    // Chance RARA de Núcleo de Eco (ID 5)
+    if (mt_rand(1, 100) <= 8) { // 8% chance
+         $loot_msg_nucleo = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 5, 1); 
+         $mensagem_combate .= "<p style='color: magenta;'>{$loot_msg_nucleo}</p>"; 
     }
     
     $mensagem_combate .= "</div>";
@@ -565,52 +641,60 @@ if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
     $hp_final = max(1, $combate['jogador_hp_atual']);
     $mana_final = max(0, $combate['jogador_mana_atual']);
     $conexao->query("UPDATE personagens SET hp_atual = {$hp_final}, mana_atual = {$mana_final} WHERE id = {$player_id}");
+}   
+    // ✅ NO FINAL DO COMBATE (quando monstro é derrotado), ADICIONAR:
+    if (isset($_SESSION['dungeon_atual']) && $_SESSION['combate_tipo'] === 'dungeon_dinamica') {
+        // ✅ INCREMENTAR INIMIGO ATUAL
+        $_SESSION['inimigo_atual_index']++;
+        
+        $dungeon = $_SESSION['dungeon_atual'];
+        $total_inimigos = count($dungeon['monstros']);
+        $inimigo_atual = $_SESSION['inimigo_atual_index'];
+        
+        // ✅ ACUMULAR RECOMPENSAS
+        if (!isset($_SESSION['recompensas_dungeon'])) {
+            $_SESSION['recompensas_dungeon'] = [
+                'ouro' => 0,
+                'xp' => 0,
+                'itens' => []
+            ];
+        }
+        
+        $_SESSION['recompensas_dungeon']['ouro'] += $monstro['ouro_recompensa'] ?? 0;
+        $_SESSION['recompensas_dungeon']['xp'] += $monstro['xp_recompensa'] ?? 0;
+        
+        // ✅ VERIFICAR SE É O ÚLTIMO INIMIGO ANTES DO CHEFE
+        if ($inimigo_atual >= $total_inimigos) {
+            $mensagem_combate .= "<div class='log-entry log-system'>";
+            $mensagem_combate .= "🎯 <strong>DUNGEON COMPLETA!</strong> Prepare-se para o CHEFE!";
+            $mensagem_combate .= "</div>";
+            
+            // ✅ BOTÃO PARA LUTAR CONTRA O CHEFE
+            $mensagem_combate .= "<div class='post-combat-actions'>";
+            $mensagem_combate .= "<a href='combate_chefe.php' class='btn btn-primary'>⚔️ ENFRENTAR CHEFE</a>";
+            $mensagem_combate .= "</div>";
+        } else {
+            // ✅ PRÓXIMO INIMIGO
+            $proximo_inimigo = $dungeon['monstros'][$inimigo_atual];
+            $mensagem_combate .= "<div class='log-entry log-system'>";
+            $mensagem_combate .= "🔜 Próximo: <strong>{$proximo_inimigo['tipo']}</strong>";
+            $mensagem_combate .= "</div>";
+        }
+    }
     
+    // Limpa status do combate ao vencer
+    $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($combate_id) . "'");
     unset($_SESSION['combate_ativo']);
     unset($_SESSION['combate_rank']);
-    // ✅ NO FINAL DO COMBATE (quando monstro é derrotado), ADICIONAR:
-if (isset($_SESSION['dungeon_atual']) && $_SESSION['combate_tipo'] === 'dungeon_dinamica') {
-    // ✅ INCREMENTAR INIMIGO ATUAL
-    $_SESSION['inimigo_atual_index']++;
-    
-    $dungeon = $_SESSION['dungeon_atual'];
-    $total_inimigos = count($dungeon['monstros']);
-    $inimigo_atual = $_SESSION['inimigo_atual_index'];
-    
-    // ✅ ACUMULAR RECOMPENSAS
-    if (!isset($_SESSION['recompensas_dungeon'])) {
-        $_SESSION['recompensas_dungeon'] = [
-            'ouro' => 0,
-            'xp' => 0,
-            'itens' => []
-        ];
-    }
-    
-    $_SESSION['recompensas_dungeon']['ouro'] += $monstro['ouro_recompensa'] ?? 0;
-    $_SESSION['recompensas_dungeon']['xp'] += $monstro['xp_recompensa'] ?? 0;
-    
-    // ✅ VERIFICAR SE É O ÚLTIMO INIMIGO ANTES DO CHEFE
-    if ($inimigo_atual >= $total_inimigos) {
-        $mensagem_combate .= "<div class='log-entry log-system'>";
-        $mensagem_combate .= "🎯 <strong>DUNGEON COMPLETA!</strong> Prepare-se para o CHEFE!";
-        $mensagem_combate .= "</div>";
-        
-        // ✅ BOTÃO PARA LUTAR CONTRA O CHEFE
-        $mensagem_combate .= "<div class='post-combat-actions'>";
-        $mensagem_combate .= "<a href='combate_chefe.php' class='btn btn-primary'>⚔️ ENFRENTAR CHEFE</a>";
-        $mensagem_combate .= "</div>";
-    } else {
-        // ✅ PRÓXIMO INIMIGO
-        $proximo_inimigo = $dungeon['monstros'][$inimigo_atual];
-        $mensagem_combate .= "<div class='log-entry log-system'>";
-        $mensagem_combate .= "🔜 Próximo: <strong>{$proximo_inimigo['tipo']}</strong>";
-        $mensagem_combate .= "</div>";
-    }
-}
+    unset($_SESSION['combate_id']);
 }
 
 // Incrementa turno se ação foi realizada
 if ($acao_jogador_realizada && isset($_SESSION['combate_ativo'])) {
+    // Garante que turno_atual existe antes de incrementar
+    if (!isset($combate['turno_atual'])) { 
+        $combate['turno_atual'] = 1;
+    }
     $combate['turno_atual']++;
 }
 
@@ -636,122 +720,117 @@ include 'header.php';
                 <h3>🎯 <?php echo htmlspecialchars($player_stats_total['nome']); ?></h3>
                 <span class="combatant-level">Nv. <?php echo $player_stats_total['level']; ?></span>
             </div>
-    <!-- STATUS EFFECTS ATIVOS -->
-    <div class="status-effects-container">
-        <h4>🎭 Status Effects Ativos</h4>
-    <div class="status-effects-grid">
-        <?php
-        // Status do jogador
-        $status_jogador = get_status_ativos($combate_id, $player_id, 'player', $conexao);
-        if ($status_jogador->num_rows > 0):
-        ?>
-        <div class="status-group">
-            <h5>Jogador:</h5>
-            <div class="status-list">
-                <?php while($status = $status_jogador->fetch_assoc()): ?>
-                <div class="status-item" style="border-left-color: <?php echo $status['cor']; ?>">
-                    <span class="status-icon"><?php echo $status['icone']; ?></span>
-                    <span class="status-name"><?php echo $status['nome']; ?></span>
-                    <span class="status-duration"><?php echo $status['duracao_restante']; ?>T</span>
-                    <?php if ($status['intensidade'] > 1): ?>
-                    <span class="status-intensity">x<?php echo $status['intensidade']; ?></span>
+            
+            <!-- STATUS EFFECTS ATIVOS DO JOGADOR -->
+            <div class="status-effects-container">
+                <h5>Status Ativos (Jogador)</h5>
+                <div class="status-list">
+                    <?php
+                    $status_jogador = get_status_ativos($combate_id, $player_id, 'player', $conexao);
+                    if ($status_jogador && $status_jogador->num_rows > 0):
+                        while($status = $status_jogador->fetch_assoc()): ?>
+                            <div class="status-item" style="border-left-color: <?php echo $status['cor'] ?? '#FFFFFF'; ?>">
+                                <span class="status-icon"><?php echo $status['icone'] ?? '?'; ?></span>
+                                <span class="status-name"><?php echo $status['nome'] ?? 'Desconhecido'; ?></span>
+                                <span class="status-duration"><?php echo $status['duracao_restante'] ?? '?'; ?>T</span>
+                                <?php if (isset($status['intensidade']) && $status['intensidade'] > 1) echo "<span class='status-intensity'>x{$status['intensidade']}</span>"; ?>
+                            </div>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <span class="no-status">(Nenhum efeito ativo)</span>
                     <?php endif; ?>
                 </div>
-                <?php endwhile; ?>
             </div>
-        </div>
-        <?php endif; ?>
-    </div>
-    </div>
-    <!-- COMBOS ATIVOS -->
-<div class="combos-container">
-    <h4>🎯 COMBOS ATIVOS</h4>
-    <div class="combos-grid">
-        <?php
-        $combos_ativos = get_combos_ativos($player_id, $conexao);
-        if ($combos_ativos && $combos_ativos->num_rows > 0):
-            while($combo = $combos_ativos->fetch_assoc()):
-                $sequencia = json_decode($combo['sequencia'], true);
-                $sequencia_atual = json_decode($combo['sequencia_atual'], true);
-                $progresso = count($sequencia_atual);
-                $total_passos = count($sequencia);
-                 // ✅ CORREÇÃO: Verificar se expira_em_turno existe
-                $turnos_restantes = isset($combo['expira_em_turno']) ? ($combo['expira_em_turno'] - ($combate['turno_atual'] ?? 1)) : 0;
-        ?>
-        <div class="combo-card">
-            <div class="combo-header">
-                <span class="combo-icon"><?php echo $combo['icone']; ?></span>
-                <span class="combo-name"><?php echo $combo['nome']; ?></span>
-                <?php if ($turnos_restantes > 0): ?>
-                <span class="combo-timer">⏳ <?php echo $turnos_restantes; ?>T</span>
-                <?php endif; ?>
-            </div>
-            <div class="combo-progress">
-                <div class="combo-steps">
-                    <?php for($i = 0; $i < $total_passos; $i++): ?>
-                        <div class="combo-step <?php echo $i < $progresso ? 'completed' : 'pending'; ?>">
-                            <?php if ($i < $progresso): ?>
-                                ✅
-                            <?php else: ?>
-                                <?php echo $i + 1; ?>
+
+            <!-- COMBOS ATIVOS -->
+            <div class="combos-container">
+                <h4>🎯 COMBOS ATIVOS</h4>
+                <div class="combos-grid">
+                    <?php
+                    $combos_ativos = get_combos_ativos($player_id, $conexao);
+                    if ($combos_ativos && $combos_ativos->num_rows > 0):
+                        while($combo = $combos_ativos->fetch_assoc()):
+                            $sequencia = json_decode($combo['sequencia'], true);
+                            $sequencia_atual = json_decode($combo['sequencia_atual'], true);
+                            $progresso = count($sequencia_atual);
+                            $total_passos = count($sequencia);
+                            $turnos_restantes = isset($combo['expira_em_turno']) ? ($combo['expira_em_turno'] - ($combate['turno_atual'] ?? 1)) : 0;
+                    ?>
+                    <div class="combo-card">
+                        <div class="combo-header">
+                            <span class="combo-icon"><?php echo $combo['icone']; ?></span>
+                            <span class="combo-name"><?php echo $combo['nome']; ?></span>
+                            <?php if ($turnos_restantes > 0): ?>
+                            <span class="combo-timer">⏳ <?php echo $turnos_restantes; ?>T</span>
                             <?php endif; ?>
                         </div>
-                        <?php if ($i < $total_passos - 1): ?>
-                            <div class="combo-connector"></div>
-                        <?php endif; ?>
-                    <?php endfor; ?>
-                </div>
-                <div class="combo-next">
-                    Próximo: <strong><?php echo $sequencia[$progresso] ?? 'Completo!'; ?></strong>
+                        <div class="combo-progress">
+                            <div class="combo-steps">
+                                <?php for($i = 0; $i < $total_passos; $i++): ?>
+                                    <div class="combo-step <?php echo $i < $progresso ? 'completed' : 'pending'; ?>">
+                                        <?php if ($i < $progresso): ?>
+                                            ✅
+                                        <?php else: ?>
+                                            <?php echo $i + 1; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php if ($i < $total_passos - 1): ?>
+                                        <div class="combo-connector"></div>
+                                    <?php endif; ?>
+                                <?php endfor; ?>
+                            </div>
+                            <div class="combo-next">
+                                Próximo: <strong><?php echo $sequencia[$progresso] ?? 'Completo!'; ?></strong>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endwhile; ?>
+                    <?php else: ?>
+                    <div class="no-combos">
+                        <p>Nenhum combo ativo. Use habilidades em sequência para ativar combos!</p>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
-        </div>
-        <?php endwhile; ?>
-        <?php else: ?>
-        <div class="no-combos">
-            <p>Nenhum combo ativo. Use habilidades em sequência para ativar combos!</p>
-        </div>
-        <?php endif; ?>
-    </div>
-</div>
 
-<!-- BÔNUS DE COMBOS ATIVOS -->
-<div class="combo-bonuses">
-    <h5>✨ Bônus de Combos Ativos</h5>
-    <div class="bonus-list">
-        <?php
-        $bonus_ativos = [];
-        if (isset($_SESSION['combo_bonus_dano'])) {
-            $bonus = $_SESSION['combo_bonus_dano'];
-            $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
-            $bonus_ativos[] = "💥 +{$bonus['valor']} dano ({$turnos_restantes}T)";
-        }
-        if (isset($_SESSION['combo_bonus_magico'])) {
-            $bonus = $_SESSION['combo_bonus_magico'];
-            $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
-            $bonus_ativos[] = "🔮 +{$bonus['valor']} dano mágico ({$turnos_restantes}T)";
-        }
-        if (isset($_SESSION['combo_bonus_critico'])) {
-            $bonus = $_SESSION['combo_bonus_critico'];
-            $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
-            $bonus_ativos[] = "🎯 +{$bonus['valor']}% crítico ({$turnos_restantes}T)";
-        }
-        if (isset($_SESSION['combo_buff_defesa'])) {
-            $bonus = $_SESSION['combo_buff_defesa'];
-            $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
-            $bonus_ativos[] = "🛡️ +{$bonus['valor']} defesa ({$turnos_restantes}T)";
-        }
-        
-        if (!empty($bonus_ativos)):
-            foreach($bonus_ativos as $bonus):
-        ?>
-        <div class="bonus-item"><?php echo $bonus; ?></div>
-        <?php endforeach; ?>
-        <?php else: ?>
-        <div class="no-bonus">Nenhum bônus ativo</div>
-        <?php endif; ?>
-    </div>
-</div>
+            <!-- BÔNUS DE COMBOS ATIVOS -->
+            <div class="combo-bonuses">
+                <h5>✨ Bônus de Combos Ativos</h5>
+                <div class="bonus-list">
+                    <?php
+                    $bonus_ativos = [];
+                    if (isset($_SESSION['combo_bonus_dano'])) {
+                        $bonus = $_SESSION['combo_bonus_dano'];
+                        $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
+                        $bonus_ativos[] = "💥 +{$bonus['valor']} dano ({$turnos_restantes}T)";
+                    }
+                    if (isset($_SESSION['combo_bonus_magico'])) {
+                        $bonus = $_SESSION['combo_bonus_magico'];
+                        $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
+                        $bonus_ativos[] = "🔮 +{$bonus['valor']} dano mágico ({$turnos_restantes}T)";
+                    }
+                    if (isset($_SESSION['combo_bonus_critico'])) {
+                        $bonus = $_SESSION['combo_bonus_critico'];
+                        $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
+                        $bonus_ativos[] = "🎯 +{$bonus['valor']}% crítico ({$turnos_restantes}T)";
+                    }
+                    if (isset($_SESSION['combo_buff_defesa'])) {
+                        $bonus = $_SESSION['combo_buff_defesa'];
+                        $turnos_restantes = $bonus['duracao'] - (($combate['turno_atual'] ?? 1) - $bonus['turno_ativado']);
+                        $bonus_ativos[] = "🛡️ +{$bonus['valor']} defesa ({$turnos_restantes}T)";
+                    }
+                    
+                    if (!empty($bonus_ativos)):
+                        foreach($bonus_ativos as $bonus):
+                    ?>
+                    <div class="bonus-item"><?php echo $bonus; ?></div>
+                    <?php endforeach; ?>
+                    <?php else: ?>
+                    <div class="no-bonus">Nenhum bônus ativo</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
             <div class="health-bar">
                 <div class="bar-label">
                     <span>VIDA</span>
@@ -794,13 +873,28 @@ include 'header.php';
                 <h3>👹 <?php echo htmlspecialchars($monstro['nome']); ?></h3>
                 <span class="combatant-rank">Rank <?php echo $rank_escolhido; ?></span>
             </div>
-                    <!-- Status do monstro (se tiver sistema de monstros) -->
-        <?php
-        // $status_monstro = get_status_ativos($combate_id, $monstro_id, 'monstro', $conexao);
-        // if ($status_monstro->num_rows > 0): 
-        ?>
-        <!-- Mostrar status do monstro aqui -->
-        <?php // endif; ?>
+            
+            <!-- STATUS EFFECTS ATIVOS DO INIMIGO -->
+            <div class="status-effects-container">
+                <h5>Status Ativos (Inimigo)</h5>
+                <div class="status-list">
+                    <?php
+                    $status_monstro = get_status_ativos($combate_id, $monstro_id_no_combate, 'monstro', $conexao);
+                    if ($status_monstro && $status_monstro->num_rows > 0):
+                        while($status = $status_monstro->fetch_assoc()): ?>
+                            <div class="status-item" style="border-left-color: <?php echo $status['cor'] ?? '#FFFFFF'; ?>">
+                                <span class="status-icon"><?php echo $status['icone'] ?? '?'; ?></span>
+                                <span class="status-name"><?php echo $status['nome'] ?? 'Desconhecido'; ?></span>
+                                <span class="status-duration"><?php echo $status['duracao_restante'] ?? '?'; ?>T</span>
+                                <?php if (isset($status['intensidade']) && $status['intensidade'] > 1) echo "<span class='status-intensity'>x{$status['intensidade']}</span>"; ?>
+                            </div>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <span class="no-status">(Nenhum efeito ativo)</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
             <div class="health-bar">
                 <div class="bar-label">
                     <span>VIDA</span>
@@ -852,151 +946,153 @@ include 'header.php';
             </a>
         </div>
     </div>
-<!-- ULTIMATE ABILITIES -->
-<div class="ultimate-abilities-container">
-    <h4>✨ ULTIMATE ABILITIES</h4>
-    <div class="ultimate-abilities-grid">
-        <?php
-        $ultimates_disponiveis = get_ultimates_disponiveis($player_id, $combate, $conexao);
-        if ($ultimates_disponiveis && $ultimates_disponiveis->num_rows > 0):
-            while($ultimate = $ultimates_disponiveis->fetch_assoc()):
-                $pode_usar = ($ultimate['cooldown_restante'] == 0) && ($combate['jogador_mana_atual'] >= $ultimate['custo_mana']);
-                $efeito_principal = json_decode($ultimate['efeito_principal'], true);
-        ?>
-        <div class="ultimate-card <?php echo $pode_usar ? 'available' : 'unavailable'; ?>" style="border-color: <?php echo $ultimate['cor_efeito']; ?>">
-            <div class="ultimate-header">
-                <span class="ultimate-icon"><?php echo $ultimate['icone']; ?></span>
-                <span class="ultimate-name"><?php echo $ultimate['nome']; ?></span>
-                <span class="ultimate-type"><?php echo strtoupper($ultimate['tipo']); ?></span>
-            </div>
-            
-            <div class="ultimate-description">
-                <?php echo $ultimate['descricao']; ?>
-            </div>
-            
-            <div class="ultimate-effects">
-                <div class="effect-primary">
-                    <?php
-                    $efeito_texto = "";
-                    if (isset($efeito_principal['dano_base'])) {
-                        $efeito_texto = "💥 " . $efeito_principal['dano_base'] . " dano";
-                    } elseif (isset($efeito_principal['cura_base'])) {
-                        $efeito_texto = "💚 " . $efeito_principal['cura_base'] . " cura";
-                    } elseif (isset($efeito_principal['protecao'])) {
-                        $efeito_texto = "🛡️ " . $efeito_principal['protecao'] . "% proteção";
-                    } elseif (isset($efeito_principal['turno_extra'])) {
-                        $efeito_texto = "⏰ Turno Extra";
-                    } elseif (isset($efeito_principal['dano_dobrado'])) {
-                        $efeito_texto = "⚡ Dano Dobrado";
-                    } elseif (isset($efeito_principal['ressuscitar'])) {
-                        $efeito_texto = "🔥 Ressuscitar";
-                    }
-                    echo $efeito_texto;
-                    ?>
-                </div>
-                <div class="effect-target">
-                    🎯 <?php echo strtoupper($ultimate['alvo']); ?>
-                </div>
-            </div>
-            
-            <div class="ultimate-costs">
-                <div class="cost-mana">
-                    💠 <?php echo $ultimate['custo_mana']; ?> Mana
-                </div>
-                <div class="cost-cooldown">
-                    ⏳ CD: <?php echo $ultimate['cooldown_turnos']; ?>T
-                </div>
-                <?php if ($ultimate['cooldown_restante'] > 0): ?>
-                <div class="cooldown-active">
-                    🔄 <?php echo $ultimate['cooldown_restante']; ?>T restantes
-                </div>
-                <?php endif; ?>
-            </div>
-            
-            <div class="ultimate-actions">
-                <?php if ($pode_usar): ?>
-                <a href="?acao=usar_ultimate&ultimate_id=<?php echo $ultimate['id']; ?>" 
-                   class="btn btn-ultimate"
-                   style="background: <?php echo $ultimate['cor_efeito']; ?>">
-                    🔥 USAR ULTIMATE
-                </a>
-                <?php else: ?>
-                <span class="btn btn-ultimate-disabled">
-                    <?php if ($ultimate['cooldown_restante'] > 0): ?>
-                    ⏳ Recarga: <?php echo $ultimate['cooldown_restante']; ?>T
-                    <?php else: ?>
-                    💠 Mana Insuficiente
-                    <?php endif; ?>
-                </span>
-                <?php endif; ?>
-            </div>
-            
-            <div class="ultimate-stats">
-                <small>Usos: <?php echo $ultimate['usos_totais']; ?> | Nv. <?php echo $ultimate['nivel_requerido']; ?>+</small>
-            </div>
-        </div>
-        <?php endwhile; ?>
-        <?php else: ?>
-        <div class="no-ultimates">
-            <p>Nenhuma Ultimate Ability desbloqueada ainda.</p>
-            <p>🎯 Alcance nível 10+ e cumpra condições específicas para desbloquear.</p>
-        </div>
-        <?php endif; ?>
-    </div>
-</div>
 
-<!-- BUFFS DE ULTIMATE ATIVOS -->
-<?php
-$buff_ultimate = get_buff_ultimate_ativo();
-$protecao_ultimate = $_SESSION['ultimate_protecao'] ?? null;
-$turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
-?>
-<div class="ultimate-buffs-container">
-    <h5>⚡ Efeitos de Ultimate Ativos</h5>
-    <div class="ultimate-buffs-list">
-        <?php if ($buff_ultimate): ?>
-        <div class="ultimate-buff-item" style="border-color: #FF9E00">
-            <span class="buff-icon">⚡</span>
-            <span class="buff-name">Explosão de Poder</span>
-            <span class="buff-duration">
-                <?php 
-                $turnos_restantes = $buff_ultimate['duracao'] - (($combate['turno_atual'] ?? 1) - $buff_ultimate['turno_ativado']);
-                echo "{$turnos_restantes}T restantes";
-                ?>
-            </span>
-            <span class="buff-effect">Dano Dobrado</span>
+    <!-- ULTIMATE ABILITIES -->
+    <div class="ultimate-abilities-container">
+        <h4>✨ ULTIMATE ABILITIES</h4>
+        <div class="ultimate-abilities-grid">
+            <?php
+            $ultimates_disponiveis = get_ultimates_disponiveis($player_id, $combate, $conexao);
+            if ($ultimates_disponiveis && $ultimates_disponiveis->num_rows > 0):
+                while($ultimate = $ultimates_disponiveis->fetch_assoc()):
+                    $pode_usar = ($ultimate['cooldown_restante'] == 0) && ($combate['jogador_mana_atual'] >= $ultimate['custo_mana']);
+                    $efeito_principal = json_decode($ultimate['efeito_principal'], true);
+            ?>
+            <div class="ultimate-card <?php echo $pode_usar ? 'available' : 'unavailable'; ?>" style="border-color: <?php echo $ultimate['cor_efeito']; ?>">
+                <div class="ultimate-header">
+                    <span class="ultimate-icon"><?php echo $ultimate['icone']; ?></span>
+                    <span class="ultimate-name"><?php echo $ultimate['nome']; ?></span>
+                    <span class="ultimate-type"><?php echo strtoupper($ultimate['tipo']); ?></span>
+                </div>
+                
+                <div class="ultimate-description">
+                    <?php echo $ultimate['descricao']; ?>
+                </div>
+                
+                <div class="ultimate-effects">
+                    <div class="effect-primary">
+                        <?php
+                        $efeito_texto = "";
+                        if (isset($efeito_principal['dano_base'])) {
+                            $efeito_texto = "💥 " . $efeito_principal['dano_base'] . " dano";
+                        } elseif (isset($efeito_principal['cura_base'])) {
+                            $efeito_texto = "💚 " . $efeito_principal['cura_base'] . " cura";
+                        } elseif (isset($efeito_principal['protecao'])) {
+                            $efeito_texto = "🛡️ " . $efeito_principal['protecao'] . "% proteção";
+                        } elseif (isset($efeito_principal['turno_extra'])) {
+                            $efeito_texto = "⏰ Turno Extra";
+                        } elseif (isset($efeito_principal['dano_dobrado'])) {
+                            $efeito_texto = "⚡ Dano Dobrado";
+                        } elseif (isset($efeito_principal['ressuscitar'])) {
+                            $efeito_texto = "🔥 Ressuscitar";
+                        }
+                        echo $efeito_texto;
+                        ?>
+                    </div>
+                    <div class="effect-target">
+                        🎯 <?php echo strtoupper($ultimate['alvo']); ?>
+                    </div>
+                </div>
+                
+                <div class="ultimate-costs">
+                    <div class="cost-mana">
+                        💠 <?php echo $ultimate['custo_mana']; ?> Mana
+                    </div>
+                    <div class="cost-cooldown">
+                        ⏳ CD: <?php echo $ultimate['cooldown_turnos']; ?>T
+                    </div>
+                    <?php if ($ultimate['cooldown_restante'] > 0): ?>
+                    <div class="cooldown-active">
+                        🔄 <?php echo $ultimate['cooldown_restante']; ?>T restantes
+                    </div>
+                    <?php endif; ?>
+                </div>
+                
+                <div class="ultimate-actions">
+                    <?php if ($pode_usar): ?>
+                    <a href="?acao=usar_ultimate&ultimate_id=<?php echo $ultimate['id']; ?>" 
+                       class="btn btn-ultimate"
+                       style="background: <?php echo $ultimate['cor_efeito']; ?>">
+                        🔥 USAR ULTIMATE
+                    </a>
+                    <?php else: ?>
+                    <span class="btn btn-ultimate-disabled">
+                        <?php if ($ultimate['cooldown_restante'] > 0): ?>
+                        ⏳ Recarga: <?php echo $ultimate['cooldown_restante']; ?>T
+                        <?php else: ?>
+                        💠 Mana Insuficiente
+                        <?php endif; ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
+                
+                <div class="ultimate-stats">
+                    <small>Usos: <?php echo $ultimate['usos_totais']; ?> | Nv. <?php echo $ultimate['nivel_requerido']; ?>+</small>
+                </div>
+            </div>
+            <?php endwhile; ?>
+            <?php else: ?>
+            <div class="no-ultimates">
+                <p>Nenhuma Ultimate Ability desbloqueada ainda.</p>
+                <p>🎯 Alcance nível 10+ e cumpra condições específicas para desbloquear.</p>
+            </div>
+            <?php endif; ?>
         </div>
-        <?php endif; ?>
-        
-        <?php if ($protecao_ultimate): ?>
-        <div class="ultimate-buff-item" style="border-color: #3A86FF">
-            <span class="buff-icon">🛡️</span>
-            <span class="buff-name">Parede Indestrutível</span>
-            <span class="buff-duration">
-                <?php 
-                $turnos_restantes = $protecao_ultimate['duracao'] - (($combate['turno_atual'] ?? 1) - $protecao_ultimate['turno_ativado']);
-                echo "{$turnos_restantes}T restantes";
-                ?>
-            </span>
-            <span class="buff-effect"><?php echo $protecao_ultimate['valor']; ?>% Proteção</span>
-        </div>
-        <?php endif; ?>
-        
-        <?php if ($turno_extra): ?>
-        <div class="ultimate-buff-item" style="border-color: #FFD166">
-            <span class="buff-icon">⏰</span>
-            <span class="buff-name">Controle Temporal</span>
-            <span class="buff-effect">Turno Extra Disponível</span>
-        </div>
-        <?php endif; ?>
-        
-        <?php if (!$buff_ultimate && !$protecao_ultimate && !$turno_extra): ?>
-        <div class="no-ultimate-buffs">
-            Nenhum efeito de ultimate ativo
-        </div>
-        <?php endif; ?>
     </div>
-</div>
+
+    <!-- BUFFS DE ULTIMATE ATIVOS -->
+    <?php
+    $buff_ultimate = get_buff_ultimate_ativo();
+    $protecao_ultimate = $_SESSION['ultimate_protecao'] ?? null;
+    $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
+    ?>
+    <div class="ultimate-buffs-container">
+        <h5>⚡ Efeitos de Ultimate Ativos</h5>
+        <div class="ultimate-buffs-list">
+            <?php if ($buff_ultimate): ?>
+            <div class="ultimate-buff-item" style="border-color: #FF9E00">
+                <span class="buff-icon">⚡</span>
+                <span class="buff-name">Explosão de Poder</span>
+                <span class="buff-duration">
+                    <?php 
+                    $turnos_restantes = $buff_ultimate['duracao'] - (($combate['turno_atual'] ?? 1) - $buff_ultimate['turno_ativado']);
+                    echo "{$turnos_restantes}T restantes";
+                    ?>
+                </span>
+                <span class="buff-effect">Dano Dobrado</span>
+            </div>
+            <?php endif; ?>
+            
+            <?php if ($protecao_ultimate): ?>
+            <div class="ultimate-buff-item" style="border-color: #3A86FF">
+                <span class="buff-icon">🛡️</span>
+                <span class="buff-name">Parede Indestrutível</span>
+                <span class="buff-duration">
+                    <?php 
+                    $turnos_restantes = $protecao_ultimate['duracao'] - (($combate['turno_atual'] ?? 1) - $protecao_ultimate['turno_ativado']);
+                    echo "{$turnos_restantes}T restantes";
+                    ?>
+                </span>
+                <span class="buff-effect"><?php echo $protecao_ultimate['valor']; ?>% Proteção</span>
+            </div>
+            <?php endif; ?>
+            
+            <?php if ($turno_extra): ?>
+            <div class="ultimate-buff-item" style="border-color: #FFD166">
+                <span class="buff-icon">⏰</span>
+                <span class="buff-name">Controle Temporal</span>
+                <span class="buff-effect">Turno Extra Disponível</span>
+            </div>
+            <?php endif; ?>
+            
+            <?php if (!$buff_ultimate && !$protecao_ultimate && !$turno_extra): ?>
+            <div class="no-ultimate-buffs">
+                Nenhum efeito de ultimate ativo
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <!-- HABILIDADES -->
     <?php if (!empty($skills_combate)): ?>
     <div class="section section-arcane">
@@ -1040,83 +1136,84 @@ $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
                 </div>
             <?php endforeach; ?>
         </div>
+        
         <!-- HABILIDADES CONDICIONAIS DISPONÍVEIS -->
-<div class="conditional-skills-container">
-    <h4>⚡ HABILIDADES ESPECIAIS (Condicionais)</h4>
-    <div class="conditional-skills-grid">
-        <?php
-        $habilidades_condicionais = get_habilidades_condicionais_disponiveis($player_id, $combate, $conexao);
-        if (!empty($habilidades_condicionais)):
-            foreach($habilidades_condicionais as $skill):
-                $condicoes = json_decode($skill['condicoes_uso'], true);
-        ?>
-        <div class="conditional-skill-card">
-            <div class="skill-condition-header">
-                <span class="skill-icon"><?php echo $skill['icone'] ?? '⚡'; ?></span>
-                <span class="skill-name"><?php echo $skill['nome']; ?></span>
-                <span class="skill-level">Nv. <?php echo $skill['skill_level'] ?? 1; ?></span>
-            </div>
-            
-            <div class="skill-description">
-                <?php echo $skill['descricao']; ?>
-            </div>
-            
-            <div class="skill-conditions">
-                <strong>Condições:</strong>
+        <div class="conditional-skills-container">
+            <h4>⚡ HABILIDADES ESPECIAIS (Condicionais)</h4>
+            <div class="conditional-skills-grid">
                 <?php
-                foreach($condicoes as $tipo => $valor):
-                    $condicao_texto = "";
-                    switch($tipo):
-                        case 'hp_minimo':
-                            $condicao_texto = "HP ≤ {$valor}%";
-                            break;
-                        case 'hp_maximo':
-                            $condicao_texto = "HP ≥ {$valor}%";
-                            break;
-                        case 'mana_minimo':
-                            $condicao_texto = "Mana ≤ {$valor}%";
-                            break;
-                        case 'turno_minimo':
-                            $condicao_texto = "Turno ≥ {$valor}";
-                            break;
-                        case 'turno_maximo':
-                            $condicao_texto = "Turno ≤ {$valor}";
-                            break;
-                        case 'alvo_hp_minimo':
-                            $condicao_texto = "Inimigo HP ≤ {$valor}%";
-                            break;
-                        case 'recursos_alternativos':
-                            $condicao_texto = "Usa HP como custo";
-                            break;
-                    endswitch;
+                $habilidades_condicionais = get_habilidades_condicionais_disponiveis($player_id, $combate, $conexao);
+                if (!empty($habilidades_condicionais)):
+                    foreach($habilidades_condicionais as $skill):
+                        $condicoes = json_decode($skill['condicoes_uso'], true);
                 ?>
-                <span class="condition-badge"><?php echo $condicao_texto; ?></span>
+                <div class="conditional-skill-card">
+                    <div class="skill-condition-header">
+                        <span class="skill-icon"><?php echo $skill['icone'] ?? '⚡'; ?></span>
+                        <span class="skill-name"><?php echo $skill['nome']; ?></span>
+                        <span class="skill-level">Nv. <?php echo $skill['skill_level'] ?? 1; ?></span>
+                    </div>
+                    
+                    <div class="skill-description">
+                        <?php echo $skill['descricao']; ?>
+                    </div>
+                    
+                    <div class="skill-conditions">
+                        <strong>Condições:</strong>
+                        <?php
+                        foreach($condicoes as $tipo => $valor):
+                            $condicao_texto = "";
+                            switch($tipo):
+                                case 'hp_minimo':
+                                    $condicao_texto = "HP ≤ {$valor}%";
+                                    break;
+                                case 'hp_maximo':
+                                    $condicao_texto = "HP ≥ {$valor}%";
+                                    break;
+                                case 'mana_minimo':
+                                    $condicao_texto = "Mana ≤ {$valor}%";
+                                    break;
+                                case 'turno_minimo':
+                                    $condicao_texto = "Turno ≥ {$valor}";
+                                    break;
+                                case 'turno_maximo':
+                                    $condicao_texto = "Turno ≤ {$valor}";
+                                    break;
+                                case 'alvo_hp_minimo':
+                                    $condicao_texto = "Inimigo HP ≤ {$valor}%";
+                                    break;
+                                case 'recursos_alternativos':
+                                    $condicao_texto = "Usa HP como custo";
+                                    break;
+                            endswitch;
+                        ?>
+                        <span class="condition-badge"><?php echo $condicao_texto; ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                    
+                    <div class="skill-cost">
+                        <span class="mana-cost">💠 <?php echo $skill['custo_mana']; ?> Mana</span>
+                        <?php if (isset($condicoes['recursos_alternativos'])): ?>
+                        <span class="hp-cost">❤️ Custo de HP</span>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <div class="skill-action">
+                        <a href="?acao=usar_skill&skill_id=<?php echo $skill['id_skill_base'] ?? $skill['id']; ?>" 
+                           class="btn btn-conditional">
+                            Usar Habilidade
+                        </a>
+                    </div>
+                </div>
                 <?php endforeach; ?>
-            </div>
-            
-            <div class="skill-cost">
-                <span class="mana-cost">💠 <?php echo $skill['custo_mana']; ?> Mana</span>
-                <?php if (isset($condicoes['recursos_alternativos'])): ?>
-                <span class="hp-cost">❤️ Custo de HP</span>
+                <?php else: ?>
+                <div class="no-conditional-skills">
+                    <p>Nenhuma habilidade condicional disponível no momento.</p>
+                    <p>⏳ Condições não atendidas ou não há habilidades aprendidas.</p>
+                </div>
                 <?php endif; ?>
             </div>
-            
-            <div class="skill-action">
-                <a href="?acao=usar_skill&skill_id=<?php echo $skill['id_skill_base'] ?? $skill['id']; ?>" 
-                   class="btn btn-conditional">
-                    Usar Habilidade
-                </a>
-            </div>
         </div>
-        <?php endforeach; ?>
-        <?php else: ?>
-        <div class="no-conditional-skills">
-            <p>Nenhuma habilidade condicional disponível no momento.</p>
-            <p>⏳ Condições não atendidas ou não há habilidades aprendidas.</p>
-        </div>
-        <?php endif; ?>
-    </div>
-</div>
     </div>
     <?php endif; ?>
 
@@ -1500,6 +1597,7 @@ $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
     margin: 20px 0;
     border: 1px solid var(--bg-tertiary);
 }
+
 .status-effects-container {
     background: var(--bg-secondary);
     padding: 15px;
@@ -1508,23 +1606,10 @@ $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
     border: 1px solid var(--bg-tertiary);
 }
 
-.status-effects-container h4 {
+.status-effects-container h4, .status-effects-container h5 {
     margin: 0 0 10px 0;
     color: var(--accent-arcane);
     font-size: 1.1em;
-}
-
-.status-effects-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 15px;
-}
-
-.status-group h5 {
-    margin: 0 0 8px 0;
-    color: var(--text-primary);
-    font-size: 0.9em;
-    font-weight: bold;
 }
 
 .status-list {
@@ -1572,8 +1657,14 @@ $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
     font-weight: bold;
 }
 
+.no-status {
+    color: var(--text-secondary);
+    font-style: italic;
+    font-size: 0.9em;
+}
+
 /* Feedback de status no log de combate */
-.status-message {
+.log-status {
     padding: 8px 12px;
     margin: 5px 0;
     border-radius: 6px;
@@ -1603,6 +1694,25 @@ $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
     border-left: 3px solid #3A86FF;
     color: #3A86FF;
 }
+
+.status-neutral {
+    background: rgba(128, 128, 128, 0.1);
+    border-left: 3px solid #808080;
+    color: #808080;
+}
+
+.status-applied {
+    background: rgba(76, 175, 80, 0.1);
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.status-resisted {
+    background: rgba(255, 152, 0, 0.1);
+    color: #FF9800;
+    font-style: italic;
+}
+
 /* ESTILOS PARA COMBOS */
 .combos-container {
     background: var(--bg-secondary);
@@ -1778,6 +1888,7 @@ $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
     border-radius: 4px;
     margin-left: 5px;
 }
+
 /* ESTILOS PARA HABILIDADES CONDICIONAIS */
 .conditional-skills-container {
     background: var(--bg-secondary);
@@ -1936,6 +2047,7 @@ $turno_extra = $_SESSION['ultimate_turno_extra'] ?? false;
     display: inline-block;
     margin: 5px 0;
 }
+
 /* ESTILOS PARA ULTIMATE ABILITIES */
 .ultimate-abilities-container {
     background: linear-gradient(135deg, var(--bg-secondary), #1a1a2e);
