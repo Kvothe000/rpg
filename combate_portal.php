@@ -648,203 +648,131 @@ if ($acao_jogador_realizada && isset($_SESSION['combate_ativo']) && isset($monst
 }
 
 // =============================================================================
-// VERIFICAÇÃO DE VITÓRIA
+// VERIFICAÇÃO DE VITÓRIA (SUBSTITUA TODO O BLOCO if($monstro['hp_atual']<=0) POR ISTO)
 // =============================================================================
+if (isset($combate['monstro']['hp_atual']) && $combate['monstro']['hp_atual'] <= 0) { // Usa $combate da sessão
 
-if (isset($monstro['hp_atual']) && $monstro['hp_atual'] <= 0) {
+    $monstro_vencido = $combate['monstro']; // Pega dados do monstro da sessão
     $mensagem_combate .= "<div class='log-entry victory-message'>";
-    $mensagem_combate .= "<h3>🎉 <strong>{$monstro['nome']} foi DERROTADO!</strong></h3>";
-    
-    // Recompensas
-    $xp_ganho = $monstro['xp_recompensa'] ?? 0;
-    $ouro_ganho = $monstro['ouro_recompensa'] ?? 0;
-    
-    if ($xp_ganho > 0 && $ouro_ganho > 0) {
-        $conexao->query("UPDATE personagens SET xp_atual = xp_atual + {$xp_ganho}, ouro = ouro + {$ouro_ganho} WHERE id = {$player_id}");
-        $mensagem_combate .= "<p>💰 Você ganhou <strong>{$xp_ganho} XP</strong> e <strong>{$ouro_ganho} Ouro</strong>!</p>";
+    $mensagem_combate .= "<h3>🎉 <strong>" . htmlspecialchars($monstro_vencido['nome']) . " foi DERROTADO!</strong></h3>";
+
+    // --- 1. Calcular e Aplicar Recompensas Base ---
+    $xp_ganho = $monstro_vencido['xp_recompensa'] ?? 0;
+    // O ouro já foi rolado ao gerar o monstro e está em $monstro_vencido['ouro_recompensa']
+    $ouro_ganho = $monstro_vencido['ouro_recompensa'] ?? 0;
+    $recompensas_aplicadas = false;
+
+    if ($xp_ganho > 0 || $ouro_ganho > 0) {
+        $sql_reward = "UPDATE personagens SET xp_atual = xp_atual + ?, ouro = ouro + ? WHERE id = ?";
+        $stmt_reward = $conexao->prepare($sql_reward);
+        if ($stmt_reward) {
+             $stmt_reward->bind_param("iii", $xp_ganho, $ouro_ganho, $player_id);
+             if ($stmt_reward->execute()) {
+                 $mensagem_combate .= "<p>💰 Você ganhou <strong>{$xp_ganho} XP</strong> e <strong>{$ouro_ganho} Ouro</strong>!</p>";
+                 $recompensas_aplicadas = true;
+             } else {
+                 error_log("[COMBATE VITORIA] Erro execute update recompensas: ".$stmt_reward->error);
+                 $mensagem_combate .= "<p style='color:red;'>Erro ao aplicar recompensas XP/Ouro.</p>";
+             }
+             $stmt_reward->close();
+        } else {
+             error_log("[COMBATE VITORIA] Erro prepare update recompensas: ".$conexao->error);
+             $mensagem_combate .= "<p style='color:red;'>Erro DB ao aplicar recompensas.</p>";
+        }
     }
 
-    // Atualizar missão diária de matar monstros (código original)
-    if (function_exists('atualizar_progresso_missao')) { // Verifica se a função existe
-        atualizar_progresso_missao($player_id, 'matar_monstros', 1, $conexao);
-    }
-    // Atualizar achievement de monstros derrotados (código original)
-    if (function_exists('atualizar_progresso_achievement')) { // Verifica se a função existe
-        atualizar_progresso_achievement($player_id, 'monstros_derrotados', 1, $conexao);
-    }
+    // --- 2. Atualizar Missões Diárias e Achievements ---
+    if (function_exists('atualizar_progresso_missao')) { atualizar_progresso_missao($player_id, 'matar_monstros', 1, $conexao); }
+    if (function_exists('atualizar_progresso_achievement')) { atualizar_progresso_achievement($player_id, 'monstros_derrotados', 1, $conexao); }
 
-
-   // ---> INÍCIO DA LÓGICA DE ATUALIZAÇÃO DA QUEST (AJUSTADA) <---
-    if ($is_quest_combate && isset($monstro['id_base']) && $monstro['id_base'] == $id_monstro_quest) {
-        // Log para confirmar entrada na lógica
-        error_log("[COMBATE VITORIA - Original] Quest ativa (ID: $quest_id_ativa), Monstro correto (ID: {$monstro['id_base']}). Chamando atualizar_progresso_quest...");
-
-        $quest_foi_atualizada = false; // Flag para saber se o update ocorreu
+    // --- 3. ATUALIZAR QUEST PRINCIPAL (SE APLICÁVEL) ---
+    $progresso_quest_final = $progresso_quest_atual; // Mantém o valor inicial carregado
+    $status_quest_final = 'em_progresso'; // Status padrão
+    if ($is_quest_combate && isset($monstro_vencido['id_base']) && $monstro_vencido['id_base'] == $id_monstro_quest) {
+        error_log("[COMBATE VITORIA] Quest ativa (ID: $quest_id_ativa), Monstro correto (ID: {$monstro_vencido['id_base']}). Chamando atualizar_progresso_quest...");
+        $quest_foi_atualizada = false;
         if (function_exists('atualizar_progresso_quest')) {
-            // Chama a função para atualizar
-            $quest_foi_atualizada = atualizar_progresso_quest($player_id, 'matar', $id_monstro_quest, 1, $conexao);
-            error_log("[COMBATE VITORIA - Original] Resultado de atualizar_progresso_quest: " . ($quest_foi_atualizada ? 'Sucesso (true)' : 'Falha (false)'));
-        } else {
-             error_log("[COMBATE VITORIA - Original] ERRO FATAL: Função atualizar_progresso_quest não existe!");
-             $mensagem_combate .= "<div class='log-entry log-error'>Erro: Sistema de quests indisponível.</div>";
-        }
+            $quest_foi_atualizada = atualizar_progresso_quest($player_id, 'matar', $id_monstro_quest, 1, $conexao); // Chama a função com logs
+        } else { error_log("[COMBATE VITORIA] ERRO FATAL: Função atualizar_progresso_quest não existe!"); }
 
-        // SEMPRE RECARREGA o progresso do banco DEPOIS de tentar atualizar
-        $sql_reload_prog = "SELECT progresso_atual, status FROM player_quests WHERE player_id = ? AND quest_id = ?";
-        $stmt_reload = $conexao->prepare($sql_reload_prog);
-        $prog_reloaded_data = null; // Para armazenar os dados recarregados
+        // Recarrega o status do BD para ter certeza
+        $sql_reload = "SELECT progresso_atual, status FROM player_quests WHERE player_id = ? AND quest_id = ?";
+        $stmt_reload = $conexao->prepare($sql_reload);
         if ($stmt_reload) {
-            $stmt_reload->bind_param("ii", $player_id, $quest_id_ativa);
-            $stmt_reload->execute();
-            $prog_reloaded_data = $stmt_reload->get_result()->fetch_assoc();
-            $stmt_reload->close();
-        } else {
-             error_log("[COMBATE VITORIA - Original] Erro prepare reload progresso quest: ".$conexao->error);
-             $mensagem_combate .= "<div class='log-entry log-error'>Erro DB ao verificar progresso da missão.</div>";
-        }
+            $stmt_reload->bind_param("ii", $player_id, $quest_id_ativa); $stmt_reload->execute();
+            $prog_reloaded = $stmt_reload->get_result()->fetch_assoc(); $stmt_reload->close();
+            if ($prog_reloaded) {
+                $progresso_quest_final = (int)$prog_reloaded['progresso_atual']; // Atualiza para usar nos botões
+                $status_quest_final = $prog_reloaded['status'];
+                error_log("[COMBATE VITORIA] Status da quest APÓS update (lido BD): Progresso=$progresso_quest_final, Status=$status_quest_final");
+                $mensagem_combate .= "<div class='log-entry log-system quest-progress'>🎯 Progresso Missão: {$progresso_quest_final}/{$objetivo_quest}.</div>";
+                if ($status_quest_final === 'completa') {
+                    $mensagem_combate .= "<div class='log-entry log-system quest-complete'>✅ Missão Completa!</div>";
+                }
+            } else { error_log("[COMBATE VITORIA] Falha ao recarregar progresso da quest."); }
+        } else { error_log("[COMBATE VITORIA] Erro prepare reload progresso: ".$conexao->error); }
+    }
 
-        // Atualiza as variáveis locais COM BASE NO QUE FOI LIDO DO BANCO
-        if ($prog_reloaded_data) {
-            $progresso_quest_atual = (int)$prog_reloaded_data['progresso_atual']; // ATUALIZA a variável local crucial!
-            $status_quest_atual = $prog_reloaded_data['status'];
-            error_log("[COMBATE VITORIA - Original] Status da quest APÓS tentativa de update (lido do BD): Progresso=$progresso_quest_atual, Status=$status_quest_atual");
-
-            // Exibe mensagem de progresso no log do jogo
-            $mensagem_combate .= "<div class='log-entry log-system quest-progress'>🎯 Progresso da Missão: {$progresso_quest_atual}/{$objetivo_quest} Slimes eliminados.</div>";
-
-            // Exibe mensagem de conclusão SE o status lido for 'completa'
-            if ($status_quest_atual === 'completa') {
-                $mensagem_combate .= "<div class='log-entry log-system quest-complete' style='color: var(--accent-vital);'>✅ **OBJETIVO DA MISSÃO COMPLETO!** Retorne a Kaelen na Guilda.</div>";
-                error_log("[COMBATE VITORIA - Original] Quest $quest_id_ativa está como COMPLETA no BD.");
+    // --- 4. Verificar Level Up ---
+    $mensagem_level_up = "";
+    if ($recompensas_aplicadas) { // Só verifica level up se XP foi aplicado
+        $player_data_atualizado = null;
+        if (function_exists('get_player_data')) { $player_data_atualizado = get_player_data($player_id, $conexao); }
+        if ($player_data_atualizado && function_exists('verificar_level_up')) {
+            $level_antes = $player_data_base['level']; // Nível antes do combate
+            $mensagem_level_up = verificar_level_up($player_id, $player_data_atualizado, $conexao);
+            if (!empty($mensagem_level_up)) {
+                $mensagem_combate .= $mensagem_level_up;
+                if ($is_quest_combate && $player_data_atualizado['level'] > $level_antes) {
+                    $mensagem_combate .= "<div class='log-entry log-error' style='/*...*/'>⚡ Dor... O 'Sistema' tem um preço.</div>";
+                }
             }
-        } else {
-             // Se falhou ao recarregar, mantém o progresso antigo incrementado localmente (menos ideal)
-             $progresso_quest_atual++; // Incrementa localmente como fallback
-             $mensagem_combate .= "<div class='log-entry log-error'>Atenção: Não foi possível confirmar o progresso da missão no banco. Exibindo contagem local: {$progresso_quest_atual}/{$objetivo_quest}</div>";
-             error_log("[COMBATE VITORIA - Original] Falha ao recarregar progresso. Usando incremento local: $progresso_quest_atual");
-        }
-
-    } elseif ($is_quest_combate) {
-         error_log("[COMBATE VITORIA - Original] Quest ativa, mas ID do monstro não correspondeu (Monstro: ".($monstro['id_base'] ?? 'N/A').", Esperado: $id_monstro_quest).");
-    }
-    // ***** FIM DA LÓGICA DE ATUALIZAÇÃO DA QUEST *****
-    
-    // Verifica level up
-    $player_data_atualizado = $conexao->query("SELECT * FROM personagens WHERE id = $player_id")->fetch_assoc();
-    
-    // ---> AJUSTE: MENSAGEM DE LEVEL UP E CUSTO DO PODER <---
-    $player_data_antes = $conexao->query("SELECT level FROM personagens WHERE id = $player_id")->fetch_assoc();
-    $level_antes = $player_data_antes['level'];
-
-    $mensagem_level_up = verificar_level_up($player_id, $player_data_atualizado, $conexao);
-    
-    // Adiciona a mensagem de level up normal
-    if (!empty($mensagem_level_up)) {
-        $mensagem_combate .= $mensagem_level_up;
-
-        // SE houve level up E FOI na quest "Custo do Poder"
-        if ($is_quest_combate && $player_data_atualizado['level'] > $level_antes) {
-             $mensagem_combate .= "<div class='log-entry log-error' style='border: 1px dashed var(--status-hp); padding: 5px;'>";
-             $mensagem_combate .= "⚡ Uma dor aguda percorre sua mente enquanto o poder flui... O 'Sistema' tem um preço.";
-             $mensagem_combate .= "</div>";
         }
     }
-    
-    // Processa loot
-    $monstro_id_base = $monstro['id_base'] ?? 0;
+
+    // --- 5. Processar Loot ---
     $mensagem_combate .= "<div class='loot-section'><strong>Loot Coletado:</strong><br>";
-    
-    // Loot específico por monstro (exemplo)
-    if ($monstro_id_base == 1) { // Slime
-        if (mt_rand(1, 100) <= 30) {
-            $loot_msg = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 2, mt_rand(1, 3)); // Fragmento de Slime
-            $mensagem_combate .= "<div class='loot-item'>{$loot_msg}</div>";
+    $loot_feedback_html = "";
+    $player_data_para_loot = $player_data_atualizado ?? $player_data_base; // Usa dados atualizados se houve level up
+    $monstro_id_base_vencido = $monstro_vencido['id_base'] ?? 0;
+    if (function_exists('processar_auto_loot')) {
+        if ($monstro_id_base_vencido == 1) { // Slime
+            if (mt_rand(1, 100) <= 80) { $loot_feedback_html .= processar_auto_loot($player_id, $player_data_para_loot, $conexao, 2, mt_rand(1, 3)); } // Frag Slime
+            if (mt_rand(1, 100) <= 10) { $loot_feedback_html .= processar_auto_loot($player_id, $player_data_para_loot, $conexao, 5, 1); } // Núcleo Eco
         }
-    } else if ($monstro_id_base == 3) { // Esqueleto Guerreiro (ID 3)
-        // Chance de dropar Espada (ID 7) OU Armadura (ID 8)
-        if (mt_rand(1, 100) <= 40) { // 40% chance de dropar equipamento
-             $id_equip_drop = (mt_rand(1, 2) == 1) ? 7 : 8;
-             $loot_msg_equip = processar_auto_loot($player_id, $player_data_atualizado, $conexao, $id_equip_drop, 1); 
-             $mensagem_combate .= "<p style='color: cyan;'>{$loot_msg_equip}</p>";
-        }
-        // Sempre dropa Fragmento Ósseo (ID 9)
-        $loot_msg_mat = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 9, mt_rand(2, 5));
-        $mensagem_combate .= "<p>{$loot_msg_mat}</p>";
-        // Chance RARA de Núcleo de Eco (ID 5)
-        if (mt_rand(1, 100) <= 8) { // 8% chance
-             $loot_msg_nucleo = processar_auto_loot($player_id, $player_data_atualizado, $conexao, 5, 1); 
-             $mensagem_combate .= "<p style='color: magenta;'>{$loot_msg_nucleo}</p>"; 
-        }
+        // Adicionar loot para outros monstros...
     }
-    
-    $mensagem_combate .= "</div>";
-    $mensagem_combate .= "</div>";
-    
-    // ✅ NO FINAL DO COMBATE (quando monstro é derrotado), ADICIONAR:
-    if (isset($_SESSION['dungeon_atual']) && $_SESSION['combate_tipo'] === 'dungeon_dinamica') {
-        // ✅ INCREMENTAR INIMIGO ATUAL
-        $_SESSION['inimigo_atual_index']++;
-        
-        $dungeon = $_SESSION['dungeon_atual'];
-        $total_inimigos = count($dungeon['monstros']);
-        $inimigo_atual = $_SESSION['inimigo_atual_index'];
-        
-        // ✅ ACUMULAR RECOMPENSAS
-        if (!isset($_SESSION['recompensas_dungeon'])) {
-            $_SESSION['recompensas_dungeon'] = [
-                'ouro' => 0,
-                'xp' => 0,
-                'itens' => []
-            ];
-        }
-        
-        $_SESSION['recompensas_dungeon']['ouro'] += $monstro['ouro_recompensa'] ?? 0;
-        $_SESSION['recompensas_dungeon']['xp'] += $monstro['xp_recompensa'] ?? 0;
-        
-        // ✅ VERIFICAR SE É O ÚLTIMO INIMIGO ANTES DO CHEFE
-        if ($inimigo_atual >= $total_inimigos) {
-            $mensagem_combate .= "<div class='log-entry log-system'>";
-            $mensagem_combate .= "🎯 <strong>DUNGEON COMPLETA!</strong> Prepare-se para o CHEFE!";
-            $mensagem_combate .= "</div>";
-            
-            // ✅ BOTÃO PARA LUTAR CONTRA O CHEFE
-            $mensagem_combate .= "<div class='post-combat-actions'>";
-            $mensagem_combate .= "<a href='combate_chefe.php' class='btn btn-primary'>⚔️ ENFRENTAR CHEFE</a>";
-            $mensagem_combate .= "</div>";
-        } else {
-            // ✅ PRÓXIMO INIMIGO
-            $proximo_inimigo = $dungeon['monstros'][$inimigo_atual];
-            $mensagem_combate .= "<div class='log-entry log-system'>";
-            $mensagem_combate .= "🔜 Próximo: <strong>{$proximo_inimigo['tipo']}</strong>";
-            $mensagem_combate .= "</div>";
-        }
-    }
-    
-    // Botões Pós-Combate (Usa $progresso_quest_atual ATUALIZADO PELO BANCO)
+    if(empty($loot_feedback_html)) { $loot_feedback_html = "<div class='no-loot'>(Nenhum item)</div>"; }
+    $mensagem_combate .= $loot_feedback_html . "</div>"; // Fim loot-section
+    $mensagem_combate .= "</div>"; // Fim victory-message
+
+    // --- 6. Gerar Botões Pós-Combate CORRETOS ---
     $mensagem_combate .= "<div class='post-combat-actions'>";
-    if ($is_quest_combate && isset($status_quest_atual) && $status_quest_atual === 'completa') { // Verifica o STATUS lido
+    if ($is_quest_combate && $status_quest_final === 'completa') { // Usa STATUS lido do BD
         $mensagem_combate .= "<a href='cidade.php' class='btn btn-primary'>🏛️ VOLTAR PARA GUILDA</a>";
-    } elseif ($is_quest_combate) {
-        $mensagem_combate .= "<a href='combate_portal.php?missao=custo_poder' class='btn btn-primary'>🔄 CONTINUAR MISSÃO</a>";
-        $mensagem_combate .= "<a href='cidade.php' class='btn'>🏳️ RETORNAR À CIDADE</a>";
-    } else { // Se não for quest combate
-        // ... (botões originais de Novo Combate / Voltar Mapa) ...
-         $mensagem_combate .= "<a href='combate_portal.php?rank={$rank_escolhido}' class='btn btn-primary'>🔄 NOVO COMBATE</a>";
-         $mensagem_combate .= "<a href='mapa.php' class='btn'>🗺️ VOLTAR AO MAPA</a>";
+    } elseif ($is_quest_combate) { // Quest ativa, mas não completa
+        $mensagem_combate .= "<a href='combate_portal.php?missao=custo_poder' class='btn btn-success'>🔄 CONTINUAR MISSÃO</a>"; // Corrigido para success
+        $mensagem_combate .= "<a href='cidade.php' class='btn btn-secondary'>🏳️ RETORNAR À CIDADE</a>"; // Corrigido para secondary
+    } else { // Não é quest combate (Portal Normal ou Dungeon)
+         // Adicione aqui a lógica para Dungeon se necessário
+         // if ($is_dungeon_combate) { ... } else { ... }
+        $mensagem_combate .= "<a href='combate_portal.php?rank={$rank_escolhido}' class='btn btn-primary'>🔄 NOVO COMBATE</a>";
+        $mensagem_combate .= "<a href='mapa.php' class='btn btn-secondary'>🗺️ VOLTAR AO MAPA</a>";
     }
-     $mensagem_combate .= "<a href='personagem.php' class='btn'>👤 VER PERSONAGEM</a>";
-    $mensagem_combate .= "</div>"; // Fim post-combat-actions
+     $mensagem_combate .= "<a href='personagem.php' class='btn'>👤 VER PERSONAGEM</a>"; // Sempre presente
+    $mensagem_combate .= "</div>";
 
-
-    // Limpa status do combate ao vencer
+    // --- 7. Limpar Sessão de Combate ---
     if (isset($_SESSION['combate_id'])) {
          $conexao->query("DELETE FROM combate_status_ativos WHERE combate_id = '" . $conexao->real_escape_string($_SESSION['combate_id']) . "'");
-     }
-     unset($_SESSION['combate_ativo']);
-     unset($_SESSION['combate_rank']);
-     unset($_SESSION['combate_id']);
-    
-}
+    }
+    unset($_SESSION['combate_ativo']);
+    unset($_SESSION['combate_rank']); // Mantido do original
+    unset($_SESSION['combate_id']);   // Mantido do original
+    // unset($_SESSION['combate_tipo']); // Descomente se quiser limpar o tipo também
+    // unset($_SESSION['combate_contexto']); // Descomente se quiser limpar o contexto
+
+} // --- FIM DO if ($monstro['hp_atual'] <= 0) ---
 
 // Incrementa turno se ação foi realizada
 if ($acao_jogador_realizada && isset($_SESSION['combate_ativo'])) {
