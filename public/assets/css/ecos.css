@@ -1,0 +1,351 @@
+/* ESTILOS ESPECÍFICOS PARA A PÁGINA DE ECOS */
+.grid-2-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 25px;
+}
+
+@media (max-width: 968px) {
+    .grid-2-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+.resources-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.resource-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--bg-tertiary);
+}
+
+.resource-icon {
+    font-size: 2em;
+    width: 60px;
+    text-align: center;
+}
+
+.resource-info {
+    flex: 1;
+}
+
+.resource-name {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+    margin-bottom: 5px;
+}
+
+.resource-value {
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+.army-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.stat-card {
+    background: var(--bg-primary);
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid var(--bg-tertiary);
+}
+
+.stat-value {
+    font-size: 2em;
+    font-weight: bold;
+    color: var(--accent-vital);
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+.army-progress {
+    background: var(--bg-primary);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--bg-tertiary);
+}
+
+.progress-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 12px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-vital), var(--accent-arcane));
+    border-radius: 6px;
+    transition: width 0.5s ease;
+}
+
+.next-unlock {
+    background: var(--bg-primary);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--accent-vital);
+}
+
+.ecos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 20px;
+}
+
+.eco-card {
+    background: var(--bg-primary);
+    border: 2px solid;
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.eco-card.status-available {
+    border-color: var(--accent-vital);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, rgba(80, 200, 120, 0.1) 100%);
+}
+
+.eco-card.status-busy {
+    border-color: var(--accent-arcane);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, rgba(138, 43, 226, 0.1) 100%);
+}
+
+.eco-card.status-ready {
+    border-color: var(--status-gold);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, rgba(255, 215, 0, 0.1) 100%);
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.eco-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+}
+
+.eco-basic-info h4 {
+    margin: 0 0 5px 0;
+    font-size: 1.2em;
+}
+
+.eco-rank {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.eco-type {
+    background: var(--bg-tertiary);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.8em;
+    color: var(--text-secondary);
+}
+
+.eco-description {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+    margin-bottom: 15px;
+    line-height: 1.4;
+}
+
+.eco-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.eco-stat {
+    background: var(--bg-tertiary);
+    padding: 8px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.8em;
+    margin-bottom: 3px;
+}
+
+.stat-value {
+    display: block;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.eco-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 15px;
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.status-available .eco-status { background: rgba(80, 200, 120, 0.2); color: var(--accent-vital); }
+.status-busy .eco-status { background: rgba(138, 43, 226, 0.2); color: var(--accent-arcane); }
+.status-ready .eco-status { background: rgba(255, 215, 0, 0.2); color: var(--status-gold); }
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.status-available .status-indicator { background: var(--accent-vital); }
+.status-busy .status-indicator { background: var(--accent-arcane); }
+.status-ready .status-indicator { background: var(--status-gold); }
+
+.status-time {
+    color: var(--text-secondary);
+    font-weight: normal;
+}
+
+.eco-actions {
+    margin-top: 15px;
+}
+
+.mission-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+.btn-small {
+    padding: 8px 12px;
+    font-size: 0.85em;
+}
+
+.btn-full {
+    width: 100%;
+    text-align: center;
+}
+
+.btn-disabled {
+    background: var(--bg-tertiary) !important;
+    color: var(--text-secondary) !important;
+    border-color: var(--text-secondary) !important;
+    cursor: not-allowed;
+    width: 100%;
+    text-align: center;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    background: var(--bg-primary);
+    border: 2px dashed var(--bg-tertiary);
+    border-radius: 12px;
+}
+
+.empty-icon {
+    font-size: 4em;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.featured-missions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.mission-featured {
+    background: var(--bg-primary);
+    border: 2px solid var(--accent-arcane);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+}
+
+.mission-badge {
+    position: absolute;
+    top: -10px;
+    right: 20px;
+    background: var(--accent-arcane);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.mission-featured h4 {
+    color: var(--accent-vital);
+    margin-bottom: 10px;
+}
+
+.mission-featured p {
+    color: var(--text-secondary);
+    margin-bottom: 15px;
+    font-size: 0.9em;
+}
+
+.mission-rewards {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 15px;
+}
+
+.reward-item {
+    font-size: 0.85em;
+    color: var(--text-primary);
+}
+
+.mission-requirements {
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    padding-top: 10px;
+    border-top: 1px solid var(--bg-tertiary);
+}
+
+.xp-value {
+    color: var(--accent-vital);
+    font-weight: bold;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 10px var(--status-gold); }
+    50% { box-shadow: 0 0 20px var(--status-gold); }
+}

@@ -6,6 +6,7 @@
 // e entra em src/core/
 require_once '../src/core/bootstrap.php';
 
+
 // 2. Definições da Página
 $titulo_pagina = "Portal de Acesso - Arcana Duality";
 $pagina_atual = 'login'; // Para destacar a aba ativa no header (se aplicável)

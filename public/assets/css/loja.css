@@ -1,0 +1,132 @@
+.shop-balance {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.balance-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: var(--bg-primary);
+    border: 2px solid var(--status-gold);
+    border-radius: 12px;
+    min-width: 200px;
+}
+
+.balance-icon {
+    font-size: 2.5em;
+}
+
+.balance-label {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+    margin-bottom: 5px;
+}
+
+.balance-value {
+    font-size: 1.8em;
+    font-weight: bold;
+    color: var(--status-gold);
+}
+
+.shop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.shop-item {
+    background: var(--bg-primary);
+    border: 2px solid var(--bg-tertiary);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.3s ease;
+}
+
+.shop-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(138, 43, 226, 0.1);
+}
+
+.shop-item.affordable {
+    border-color: var(--accent-vital);
+}
+
+.shop-item.expensive {
+    border-color: var(--status-hp);
+    opacity: 0.7;
+}
+
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.item-header h4 {
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.item-price {
+    background: var(--status-gold);
+    color: var(--bg-primary);
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.item-description {
+    color: var(--text-secondary);
+    margin-bottom: 15px;
+    line-height: 1.5;
+}
+
+.item-type {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.type-badge, .stock-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.type-badge {
+    background: var(--accent-arcane);
+    color: white;
+}
+
+.stock-badge {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+
+.item-actions {
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .shop-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .item-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .item-type {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

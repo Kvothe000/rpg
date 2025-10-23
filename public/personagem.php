@@ -1,12 +1,16 @@
 <?php
-session_start();
-include_once 'db_connect.php'; // ✅ Use include_once
-include_once 'game_logic.php'; // ✅ Use include_once  
-include_once 'daily_quests_functions.php';
+// public/personagem.php
+
+// 1. Inclui o bootstrap: Carrega DB, funções, sessão, etc.
+// O caminho '../src/core/bootstrap.php' sobe um nível (de public para rpg)
+// e entra em src/core/
+require_once '../src/core/bootstrap.php';
 
 
+// 2. Definições da Página
 $titulo_pagina = "Ficha do Personagem";
-$pagina_atual = 'personagem';
+$pagina_atual = 'personagem'; // Para destacar a aba ativa no header (se aplicável)
+$mensagem = "";          // Mensagens de feedback (sucesso/erro)
 
 // =============================================================================
 // VERIFICAÇÃO DE LOGIN E SEGURANÇA

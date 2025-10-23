@@ -1,0 +1,313 @@
+.world-map-container {
+    background: var(--bg-primary);
+    border: 2px solid var(--accent-arcane);
+    border-radius: 15px;
+    padding: 30px;
+    position: relative;
+    min-height: 500px;
+}
+
+.world-map {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    background: 
+        radial-gradient(circle at 20% 30%, rgba(138, 43, 226, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(80, 200, 120, 0.1) 0%, transparent 50%),
+        linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+    border-radius: 10px;
+    border: 1px solid var(--bg-tertiary);
+}
+
+.map-region {
+    position: absolute;
+    padding: 15px;
+    border: 2px solid;
+    border-radius: 10px;
+    background: var(--bg-primary);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    transition: all 0.3s ease;
+    min-width: 280px; /* Aumentado */
+    z-index: 5;
+}
+
+.map-region.descoberta {
+    opacity: 1;
+    z-index: 10;
+    cursor: default;
+}
+
+.map-region.descoberta:hover {
+    transform: scale(1.03);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
+
+.map-region.oculta {
+    opacity: 0.3;
+    filter: blur(2px);
+    cursor: not-allowed;
+    z-index: 1;
+}
+
+.region-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+.region-icon { font-size: 1.2em; }
+.region-name { font-weight: bold; color: var(--text-primary); flex: 1; }
+.region-level { color: var(--text-secondary); font-size: 0.8em; }
+
+.region-portals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.portal-link-item {
+    display: grid;
+    grid-template-columns: 90px 1fr 80px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+}
+
+.portal-link-item.locked {
+    opacity: 0.6;
+}
+
+.portal-difficulty {
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.portal-name {
+    font-size: 0.9em;
+    color: var(--text-primary);
+}
+
+.btn-enter-portal {
+    background: var(--accent-vital);
+    color: var(--bg-primary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 0.8em;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+.btn-enter-portal:hover {
+    background: var(--accent-arcane);
+    color: white;
+    transform: scale(1.05);
+}
+
+.btn-enter-locked {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.8em;
+    text-align: center;
+    cursor: not-allowed;
+}
+
+.region-locked-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.lock-icon { font-size: 2em; }
+.lock-text { color: var(--text-secondary); margin-top: 5px; }
+
+.player-position {
+    position: absolute;
+    text-align: center;
+    z-index: 10;
+}
+
+.player-marker {
+    font-size: 2em;
+    animation: float 3s ease-in-out infinite;
+}
+
+.player-name {
+    margin-top: 5px;
+    font-weight: bold;
+    color: var(--accent-vital);
+    font-size: 0.8em;
+}
+
+/* FEEDBACK MESSAGES */
+.feedback {
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+    text-align: center;
+    font-weight: bold;
+    border: 2px solid;
+}
+
+.feedback-error {
+    background: rgba(239, 71, 111, 0.1);
+    border-color: var(--status-hp);
+    color: var(--status-hp);
+}
+
+/* DUNGEONS DINÂMICAS (MANTIDO PARA COMPATIBILIDADE) */
+.dynamic-dungeons-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 20px;
+}
+
+.dynamic-dungeon-card {
+    background: var(--bg-primary);
+    border: 2px solid var(--accent-arcane);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.dynamic-dungeon-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 30px rgba(138, 43, 226, 0.3);
+}
+
+.dungeon-header {
+    padding: 20px;
+    color: white;
+    text-align: center;
+    position: relative;
+}
+
+.dungeon-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(255,255,255,0.2);
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.dungeon-header h3 {
+    margin: 10px 0;
+    font-size: 1.3em;
+}
+
+.dungeon-modifier {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.9em;
+    opacity: 0.9;
+}
+
+.dungeon-content {
+    padding: 20px;
+}
+
+.dungeon-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat {
+    text-align: center;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.stat-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.8em;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    display: block;
+    font-weight: bold;
+    color: var(--accent-vital);
+}
+
+.dungeon-modifiers ul {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0;
+}
+
+.dungeon-modifiers li {
+    padding: 5px 0;
+    color: var(--text-secondary);
+}
+
+.rewards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.reward {
+    padding: 8px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    text-align: center;
+    font-size: 0.9em;
+}
+
+.dungeon-actions {
+    padding: 20px;
+    background: var(--bg-secondary);
+    text-align: center;
+    border-top: 1px solid var(--bg-tertiary);
+}
+
+.btn-enter-dungeon {
+    background: linear-gradient(135deg, var(--accent-arcane), var(--accent-vital));
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-enter-dungeon:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(138, 43, 226, 0.4);
+}
+
+.timer {
+    margin-top: 10px;
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+/* ANIMAÇÕES */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}

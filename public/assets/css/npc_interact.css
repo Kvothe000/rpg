@@ -1,0 +1,23 @@
+ /* ... (Seus estilos para .npc-dialogue-header, .dialogue-history, .btn-dialogue-option, etc.) ... */
+     .npc-dialogue-header { display: flex; align-items: center; gap: 20px; }
+    .npc-portrait { width: 80px; height: 80px; background: var(--bg-primary); border: 2px solid var(--accent-arcane); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .portrait-icon { font-size: 2.5em; }
+    .npc-info h2 { color: var(--accent-vital); margin-bottom: 10px; }
+    .npc-description { color: var(--text-secondary); margin-bottom: 15px; }
+    .reputation-display { display: flex; gap: 15px; margin-top: 10px; flex-wrap: wrap; }
+    .reputation-item { background: var(--bg-primary); padding: 5px 10px; border-radius: 6px; font-size: 0.9em; display: flex; gap: 8px; align-items: center; border: 1px solid var(--bg-tertiary); }
+    .dialogue-history { background: var(--bg-primary); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--bg-tertiary); min-height: 100px; }
+    .dialogue-message { margin-bottom: 15px; }
+    .message-sender { font-weight: bold; color: var(--accent-vital); margin-bottom: 5px; }
+    .message-content { color: var(--text-primary); line-height: 1.5; }
+    .quest-hint { margin-top: 10px; padding: 8px; background: rgba(255, 215, 0, 0.1); border-left: 3px solid var(--status-gold); color: var(--status-gold); border-radius: 4px; }
+    .dialogue-options { display: flex; flex-direction: column; gap: 10px; }
+    .btn-dialogue-option { display: block; width: 100%; text-align: left; padding: 12px 18px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--bg-tertiary); border-radius: 6px; cursor: pointer; transition: all 0.3s ease; font-family: inherit; font-size: 1em; }
+    .btn-dialogue-option:hover { background: var(--accent-arcane); color: white; border-color: var(--accent-arcane); transform: translateX(3px); }
+    .test-indicator { color: var(--status-gold); font-size: 0.8em; font-style: italic; margin-left: 5px; }
+    .reward-indicator { float: right; color: var(--accent-vital); font-size: 0.9em; font-weight: bold; } /* Ajustado */
+    .btn-dialogue-option.quest-turnin { border-left: 4px solid var(--accent-vital); } /* Destaque para entrega */
+    .quest-complete-indicator { background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(76, 175, 80, 0.2)); border: 2px solid #4CAF50; padding: 10px 15px; border-radius: 8px; margin-top: 15px; font-weight: bold; color: #4CAF50; animation: pulse-quest 2s infinite; }
+    .feedback-test { background: rgba(255, 215, 0, 0.1); border-color: var(--status-gold); color: var(--status-gold); margin-top: 15px; padding: 10px 15px; border-left: 4px solid var(--status-gold); }
+    .text-center { text-align: center; }
+    @keyframes pulse-quest { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
