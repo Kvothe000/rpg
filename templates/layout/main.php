@@ -9,7 +9,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo isset($titulo_pagina) ? htmlspecialchars($titulo_pagina) : 'Arcana Duality'; ?></title>
-    <link rel="stylesheet" href="assets/css/style.css"> <?php // Caminho relativo à pasta public ?>
+    <link rel="stylesheet" href="assets/css/style.css"> 
+    <?php // Caminho relativo à pasta public ?>
     <?php
         // Futuramente: incluir CSS específico da página aqui
     ?>

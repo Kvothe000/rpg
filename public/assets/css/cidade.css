@@ -1,0 +1,246 @@
+/* ESTILOS ESPECÍFICOS DA PÁGINA DA CIDADE */
+.grid-2-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 25px;
+}
+
+@media (max-width: 768px) {
+    .grid-2-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+.transmission-feed {
+    background: var(--bg-primary);
+    border: 1px solid var(--accent-arcane);
+    border-radius: 5px;
+    padding: 15px;
+    max-height: 150px; /* Limita altura */
+    overflow-y: auto; /* Adiciona scroll */
+}
+
+.transmission-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bg-secondary);
+    font-size: 0.9em;
+}
+
+.transmission-item:last-child {
+    border-bottom: none;
+}
+
+.transmission-time {
+    color: var(--accent-vital);
+    font-weight: bold;
+}
+
+.transmission-type {
+    font-weight: bold;
+    margin: 0 5px;
+}
+
+.transmission-conselho { color: var(--accent-arcane); }
+.transmission-sistema { color: var(--accent-vital); }
+.transmission-mercado { color: var(--status-gold); }
+
+/* Missões Diárias Preview */
+.daily-quests-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.quest-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--bg-tertiary);
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.quest-card.completed {
+    opacity: 0.7;
+    background: var(--bg-secondary); /* Fundo um pouco diferente para completas */
+}
+
+.quest-icon {
+    font-size: 1.8em;
+    opacity: 0.8;
+}
+
+.quest-info {
+    flex: 1;
+}
+
+.quest-info h4 {
+    margin: 0 0 3px 0;
+    color: var(--text-primary);
+    font-size: 1em;
+}
+
+.quest-info p {
+    margin: 0 0 8px 0;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.quest-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-vital), var(--accent-arcane));
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.progress-text {
+    font-size: 0.8em;
+    color: var(--text-secondary);
+    min-width: 50px;
+    text-align: right;
+}
+
+.quest-reward {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: right;
+    font-size: 0.85em;
+}
+
+.reward-gold { color: var(--status-gold); }
+.reward-xp { color: var(--accent-arcane); }
+
+.quests-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.summary-item span {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+.summary-item strong {
+    color: var(--accent-vital);
+    font-size: 1.1em;
+    margin-left: 5px;
+}
+
+.empty-quests {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+.empty-quests p { margin: 5px 0; }
+
+/* Exército de Sombras Preview */
+.eco-status {
+    background: var(--bg-primary);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--bg-tertiary);
+}
+.eco-active h4 { margin-bottom: 5px; }
+.eco-active p { margin: 3px 0; font-size: 0.9em; color: var(--text-secondary); }
+.eco-actions { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
+
+
+/* NPCs INTERATIVOS */
+.npcs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Ajustado minmax */
+    gap: 15px; /* Reduzido gap */
+    margin-top: 15px;
+}
+
+.npc-card {
+    background: var(--bg-primary);
+    border: 2px solid;
+    border-radius: 10px; /* Levemente menor */
+    padding: 15px; /* Reduzido padding */
+    transition: all 0.3s ease;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.1); /* Sombra mais sutil */
+}
+
+.npc-card[data-faccao="guilda"] {
+    border-color: var(--accent-vital);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, rgba(80, 200, 120, 0.05) 100%);
+}
+.npc-card[data-faccao="faccao_oculta"] {
+    border-color: var(--accent-arcane);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, rgba(138, 43, 226, 0.05) 100%);
+}
+.npc-card[data-faccao="neutro"] { border-color: var(--bg-tertiary); }
+.npc-card:hover { transform: translateY(-3px); box-shadow: 0 6px 15px rgba(0,0,0,0.15); }
+
+.npc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; } /* Reduzido gap e margin */
+.npc-icon { font-size: 2em; width: 50px; height: 50px; /* Menor */ display: flex; align-items: center; justify-content: center; background: var(--bg-secondary); border-radius: 50%; border: 2px solid currentColor; }
+.npc-card[data-faccao="guilda"] .npc-icon { color: var(--accent-vital); }
+.npc-card[data-faccao="faccao_oculta"] .npc-icon { color: var(--accent-arcane); }
+.npc-info h4 { margin: 0 0 5px 0; color: var(--text-primary); font-size: 1.1em; } /* Menor margin */
+.npc-faccao { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.faccao-badge { padding: 3px 8px; border-radius: 12px; font-size: 0.75em; font-weight: bold; } /* Menor */
+.faccao-guilda { background: var(--accent-vital); color: white; }
+.faccao-faccao_oculta { background: var(--accent-arcane); color: white; }
+.faccao-neutro { background: var(--bg-tertiary); color: var(--text-secondary); }
+.relationship-status { padding: 2px 6px; border-radius: 8px; font-size: 0.7em; font-weight: bold; } /* Menor */
+.relationship-inimigo { background: var(--status-hp); color: white; }
+.relationship-hostil { background: #FF6B35; color: white; }
+.relationship-neutro { background: var(--bg-tertiary); color: var(--text-secondary); }
+.relationship-aliado { background: var(--accent-vital); color: white; }
+.relationship-idolo { background: gold; color: black; }
+.npc-desc { color: var(--text-secondary); margin-bottom: 12px; line-height: 1.4; font-size: 0.9em; } /* Reduzido margin e font-size */
+.npc-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.btn-dialogue { background: var(--accent-arcane); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85em; transition: all 0.3s ease; flex: 1; text-align: center; } /* Menor */
+.btn-dialogue:hover { background: var(--accent-vital); transform: translateY(-1px); }
+.reputation-display { color: var(--text-secondary); font-size: 0.75em; font-weight: bold; padding: 4px 8px; background: var(--bg-secondary); border-radius: 6px; } /* Menor */
+.no-npcs { text-align: center; padding: 30px 15px; color: var(--text-secondary); grid-column: 1 / -1; font-style: italic; }
+
+/* Portais */
+.portals-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 15px; } /* Ajustado minmax */
+.portal-card { background: var(--bg-primary); border: 2px solid var(--accent-arcane); border-radius: 8px; padding: 15px; text-align: center; transition: all 0.3s ease; position: relative; }
+.portal-card.mission-portal { border-color: var(--accent-vital); } /* Destaca portal de missão */
+.portal-card:hover { transform: translateY(-4px); box-shadow: 0 6px 15px rgba(138, 43, 226, 0.3); }
+.portal-card h4 { margin-bottom: 5px; font-size: 1.1em; }
+.portal-desc { color: var(--text-secondary); font-size: 0.85em; margin: 5px 0; }
+.portal-level { color: var(--accent-vital); font-weight: bold; margin-bottom: 10px; font-size: 0.9em; }
+.portal-card .btn { margin-top: 10px; }
+
+/* Serviços */
+.services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; } /* Ajustado minmax */
+.service-card { display: flex; flex-direction: column; align-items: center; background: var(--bg-primary); border: 2px solid var(--accent-vital); border-radius: 8px; padding: 15px; text-decoration: none; color: var(--text-primary); transition: all 0.3s ease; text-align: center; }
+.service-card:hover { background: var(--accent-vital); color: var(--bg-primary); transform: translateY(-2px); }
+.service-icon { font-size: 1.8em; margin-bottom: 8px; }
+.service-name { font-weight: bold; margin-bottom: 4px; font-size: 1em; }
+.service-desc { font-size: 0.75em; color: inherit; opacity: 0.8; }
+
+/* Adicional para glow effect no botão da missão */
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 5px var(--accent-vital); }
+  50% { box-shadow: 0 0 15px var(--accent-vital-glow); }
+}
+.glow-effect { animation: glow 2s ease-in-out infinite; }

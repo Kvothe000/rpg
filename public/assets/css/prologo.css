@@ -1,0 +1,68 @@
+        body { 
+            font-family: monospace; 
+            background-color: #000; 
+            color: #ccc; 
+            margin: 0; 
+            padding: 0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .prologo-container { 
+            max-width: 800px; 
+            padding: 40px; 
+            text-align: left; 
+            line-height: 1.6; 
+            border: 1px solid #555; 
+            background-color: #111; 
+            box-shadow: 0 0 20px rgba(138, 43, 226, 0.3);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .prologo-container p { 
+            margin: 0 0 1em 0; 
+        }
+        .highlight { 
+            color: #FF00FF;
+            font-weight: bold; 
+        }
+        .system-message { 
+            color: #00FFFF;
+            border: 1px dashed #00FFFF; 
+            padding: 10px; 
+            margin-top: 15px; 
+        }
+        .continue-link { 
+            display: block; 
+            margin-top: 30px; 
+            text-align: center; 
+            color: #50C878; 
+            text-decoration: none; 
+            font-weight: bold; 
+            border: 1px solid #50C878; 
+            padding: 15px; 
+            transition: all 0.3s ease;
+            border-radius: 8px;
+        }
+        .continue-link:hover { 
+            background-color: #50C878; 
+            color: #111; 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(80, 200, 120, 0.3);
+        }
+        @keyframes fadeIn { 
+            from { opacity: 0; } 
+            to { opacity: 1; } 
+        }
+        .prologo-container { 
+            animation: fadeIn 2s ease-in; 
+        }
+        .character-name {
+            color: #FFF;
+            font-weight: bold;
+        }
+        .alert {
+            color: #FF4444;
+        }
