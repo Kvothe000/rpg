@@ -1,0 +1,265 @@
+        .login-container {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a1a 0%, #1a0a2a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .portal-card {
+            background: #2a2a2a;
+            border: 3px solid #8A2BE2;
+            border-radius: 15px;
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 20px 40px rgba(138, 43, 226, 0.3);
+            position: relative;
+            background: linear-gradient(135deg, #2a2a2a 0%, #2a1a3a 100%);
+        }
+
+        .portal-header {
+            text-align: center;
+            margin-bottom: 30px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .portal-icon {
+            font-size: 4em;
+            margin-bottom: 15px;
+        }
+
+        .portal-title {
+            color: #8A2BE2;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(138, 43, 226, 0.5);
+        }
+
+        .portal-subtitle {
+            color: #aaaaaa;
+            font-size: 1.1em;
+        }
+
+        .form-tabs {
+            display: flex;
+            margin-bottom: 30px;
+            background: #333333;
+            border-radius: 10px;
+            padding: 5px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: #aaaaaa;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 0.9em;
+            position: relative;
+            z-index: 11;
+        }
+
+        .tab-btn.active {
+            background: #8A2BE2;
+            color: white;
+            box-shadow: 0 4px 12px rgba(138, 43, 226, 0.4);
+        }
+
+        .tab-content {
+            display: none;
+            position: relative;
+            z-index: 10;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #50C878;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9em;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 15px;
+            background: #1a1a1a;
+            border: 2px solid #8A2BE2;
+            border-radius: 8px;
+            color: #cccccc;
+            font-family: inherit;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 11;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #FF00FF;
+            box-shadow: 0 0 15px rgba(138, 43, 226, 0.5);
+        }
+
+        .class-selection {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .class-option {
+            padding: 15px 10px;
+            background: #1a1a1a;
+            border: 2px solid #333333;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 11;
+        }
+
+        .class-option:hover {
+            border-color: #8A2BE2;
+            transform: translateY(-2px);
+        }
+
+        .class-option.selected {
+            border-color: #50C878;
+            background: rgba(80, 200, 120, 0.1);
+            box-shadow: 0 5px 15px rgba(80, 200, 120, 0.3);
+        }
+
+        .class-icon {
+            font-size: 2em;
+            margin-bottom: 8px;
+        }
+
+        .class-name {
+            font-weight: bold;
+            color: #cccccc;
+            margin-bottom: 5px;
+        }
+
+        .class-desc {
+            font-size: 0.8em;
+            color: #aaaaaa;
+        }
+
+        .btn-portal {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #8A2BE2, #FF00FF);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+            position: relative;
+            z-index: 11;
+        }
+
+        .btn-portal:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(138, 43, 226, 0.5);
+        }
+
+        .portal-footer {
+            text-align: center;
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid #333333;
+            position: relative;
+            z-index: 10;
+        }
+
+        .footer-text {
+            color: #aaaaaa;
+            font-size: 0.9em;
+        }
+
+        .footer-link {
+            color: #50C878;
+            text-decoration: none;
+        }
+
+        .footer-link:hover {
+            text-decoration: underline;
+        }
+
+        .feedback {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            border-left: 5px solid;
+            background: #333333;
+            position: relative;
+            z-index: 10;
+        }
+
+        .feedback-success {
+            border-left-color: #50C878;
+            background: linear-gradient(135deg, #333333 0%, rgba(80, 200, 120, 0.1) 100%);
+            color: #50C878;
+        }
+
+        .feedback-error {
+            border-left-color: #FF4444;
+            background: linear-gradient(135deg, #333333 0%, rgba(255, 68, 68, 0.1) 100%);
+            color: #FF4444;
+        }
+
+        @media (max-width: 768px) {
+            .portal-card {
+                padding: 30px 20px;
+            }
+
+            .portal-title {
+                font-size: 2em;
+            }
+
+            .class-selection {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .class-selection {
+                grid-template-columns: 1fr;
+            }
+
+            .form-tabs {
+                flex-direction: column;
+            }
+
+            .tab-btn {
+                margin-bottom: 5px;
+            }
+        }
